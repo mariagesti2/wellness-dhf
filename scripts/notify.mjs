@@ -46,6 +46,12 @@ if (process.env.TEST_MSG) {
   process.exit(0);
 }
 
+// 0) Mensaje manual (lanzado a mano desde GitHub Actions)
+if ((process.env.MENSAJE || "").trim()) {
+  await send(users, "Wellness DHF", process.env.MENSAJE.trim(), SITE_URL, "manual-" + Date.now());
+  process.exit(0);
+}
+
 // 1) Wellness a la hora indicada (con margen de 4 h por si GitHub se retrasa)
 const wT = t2m(sch.wellnessTime);
 if (!state.wellness && nowMin >= wT && nowMin < wT + 240) {
