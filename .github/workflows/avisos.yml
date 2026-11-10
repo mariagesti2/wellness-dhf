@@ -3,6 +3,8 @@ on:
   schedule:
     - cron: "*/10 * * * *"   # cada 10 minutos (GitHub puede retrasarlo unos minutos)
   workflow_dispatch: {}       # botón para lanzarlo a mano y probar
+permissions:
+  contents: write
 jobs:
   avisar:
     runs-on: ubuntu-latest
@@ -20,3 +22,14 @@ jobs:
         working-directory: scripts
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+      # GitHub pausa las tareas programadas tras 60 días sin cambios en el repositorio:
+      # cada ~45 días se hace un pequeño commit automático para mantenerlo activo.
+      - name: Mantener el repositorio activo
+        run: |
+          last=$(git log -1 --format=%ct)
+          if [ $(( $(date +%s) - last )) -gt $(( 45*24*3600 )) ]; then
+            date -u +%Y-%m-%d > .keepalive
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add .keepalive && git commit -m "Mantener activos los avisos automáticos" && git push
+          fi
