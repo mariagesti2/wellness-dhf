@@ -27,7 +27,6 @@ jobs:
         working-directory: scripts
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-          MENSAJE: ${{ github.event.inputs.mensaje }}
           TEST_MSG: ${{ github.event.inputs.mensaje }}
       # GitHub pausa las tareas programadas tras 60 días sin cambios en el repositorio:
       # cada ~45 días se hace un pequeño commit automático para mantenerlo activo.
