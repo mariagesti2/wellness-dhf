@@ -15,7 +15,14 @@ const nowMin = +parts.hour * 60 + +parts.minute;
 const dow = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(parts.weekday);
 const t2m = t => +t.slice(0, 2) * 60 + +t.slice(3, 5);
 
-const sch = { wellnessTime: "08:00", rpeDelay: 15, weekly: [], events: [], skipDates: [], ...((await db.doc("config/schedule").get()).data() || {}) };
+const DEFAULT_WEEKLY = [
+    { id: "lun", type: "entreno", day: 1, start: "19:00", end: "20:30" },
+    { id: "mar", type: "entreno", day: 2, start: "21:00", end: "22:30" },
+    { id: "jue1", type: "entreno", day: 4, start: "16:00", end: "17:30" },
+    { id: "jue2", type: "entreno", day: 4, start: "19:00", end: "20:30" },
+    { id: "vie", type: "entreno", day: 5, start: "16:00", end: "17:30" }
+  ];
+const sch = { wellnessTime: "08:00", rpeDelay: 0, weekly: DEFAULT_WEEKLY, events: [], skipDates: [], ...((await db.doc("config/schedule").get()).data() || {}) };
 const stateRef = db.doc("system/notify");
 let state = (await stateRef.get()).data() || {};
 if (state.date !== today) state = { date: today, wellness: false, sent: [] };

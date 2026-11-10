@@ -9,7 +9,13 @@
     dow: iso => new Date(iso + "T12:00:00").getDay(),
     today
   };
-  const DEFAULT_SCHEDULE = { wellnessTime: "08:00", rpeDelay: 15, weekly: [], events: [], skipDates: [] };
+  const DEFAULT_SCHEDULE = { wellnessTime: "08:00", rpeDelay: 0, weekly: [
+    { id: "lun", type: "entreno", day: 1, start: "19:00", end: "20:30" },
+    { id: "mar", type: "entreno", day: 2, start: "21:00", end: "22:30" },
+    { id: "jue1", type: "entreno", day: 4, start: "16:00", end: "17:30" },
+    { id: "jue2", type: "entreno", day: 4, start: "19:00", end: "20:30" },
+    { id: "vie", type: "entreno", day: 5, start: "16:00", end: "17:30" }
+  ], events: [], skipDates: [] };
 
   /* ======================= DEMO ======================= */
   function DemoStore() {
