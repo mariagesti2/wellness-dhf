@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Wellness DHF</title>
+  <meta name="theme-color" content="#1f3b63">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Wellness DHF">
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+  <header class="top">
+    <img src="icons/icon-192.png" alt="" class="logo">
+    <div class="top-title"><b id="teamName">Wellness</b><span id="whoami"></span></div>
+    <button id="btnLogout" class="ghost hidden" aria-label="Cerrar sesión">Salir</button>
+  </header>
+  <div id="demoBar" class="demo-bar hidden">Modo demo · datos inventados · <a href="#" id="demoReset">reiniciar</a></div>
+  <main id="view"><p class="muted center pad">Cargando…</p></main>
+  <nav id="tabs" class="tabs hidden"></nav>
+  <div id="toast" class="toast"></div>
+
+  <script src="js/config.js"></script>
+  <script src="js/xlsx.js"></script>
+  <script src="js/charts.js"></script>
+  <script src="js/store.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

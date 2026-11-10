@@ -1,0 +1,33 @@
+rules_version = '2';
+// Reglas de seguridad: cada jugadora solo ve y escribe sus datos;
+// el cuerpo técnico (emails en config/admins) ve los de todas y edita el horario.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function isCoach() {
+      return signedIn() && request.auth.token.email != null &&
+        request.auth.token.email.lower() in get(/databases/$(database)/documents/config/admins).data.emails;
+    }
+    function owns(data) { return signedIn() && data.uid == request.auth.uid; }
+
+    match /users/{uid} {
+      allow read: if signedIn() && (request.auth.uid == uid || isCoach());
+      allow create, update: if signedIn() && request.auth.uid == uid;
+    }
+    match /wellness/{id} {
+      allow read: if owns(resource.data) || isCoach();
+      allow create, update: if owns(request.resource.data) && id == request.auth.uid + '_' + request.resource.data.date
+        && request.resource.data.stress is int && request.resource.data.stress >= 0 && request.resource.data.stress <= 5;
+      allow delete: if owns(resource.data) || isCoach();
+    }
+    match /rpe/{id} {
+      allow read: if owns(resource.data) || isCoach();
+      allow create, update: if owns(request.resource.data) && id.matches(request.auth.uid + '_.*')
+        && request.resource.data.rpe is int && request.resource.data.rpe >= 1 && request.resource.data.rpe <= 10;
+      allow delete: if owns(resource.data) || isCoach();
+    }
+    match /config/schedule { allow read: if signedIn(); allow write: if isCoach(); }
+    match /config/admins   { allow read: if signedIn(); allow write: if false; }
+    match /system/{doc}    { allow read, write: if false; }   // solo el script de avisos
+  }
+}
