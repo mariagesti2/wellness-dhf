@@ -88,6 +88,8 @@
       async players() { return db.players; },
       async getSchedule() { return { ...DEFAULT_SCHEDULE, ...db.schedule }; },
       async saveSchedule(s) { db.schedule = s; save(); },
+      async sendMessage(m) { db.messages = db.messages || []; db.messages.unshift({ ...m, id: "m" + Date.now(), ts: Date.now(), by: user.email, status: "demo" }); save(); },
+      async listMessages() { return (db.messages || []).slice(0, 15); },
       async enablePush() { return "En modo demo no hay notificaciones. Funcionarán cuando conectes Firebase."; }
     };
   }
@@ -131,6 +133,8 @@
       async players() { return (await list(F.collection(fs, "users"))).map(u => ({ uid: u.id, name: u.name, email: u.email, staff: !!u.staff, hasPush: (u.tokens || []).length > 0 })); },
       async getSchedule() { const s = await F.getDoc(F.doc(fs, "config", "schedule")); return { ...DEFAULT_SCHEDULE, ...(s.data() || {}) }; },
       async saveSchedule(s) { await F.setDoc(F.doc(fs, "config", "schedule"), s); },
+      async sendMessage(m) { await F.addDoc(F.collection(fs, "messages"), { ...m, ts: Date.now(), by: user.email, status: "pending" }); },
+      async listMessages() { return list(F.query(F.collection(fs, "messages"), F.orderBy("ts", "desc"), F.limit(15))); },
       async enablePush() {
         if (!("Notification" in root) || !("serviceWorker" in navigator)) return "Este navegador no admite notificaciones. En iPhone: abre la app desde el icono de la pantalla de inicio (iOS 16.4 o superior).";
         const perm = await Notification.requestPermission();

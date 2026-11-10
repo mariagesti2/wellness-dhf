@@ -46,6 +46,20 @@ if (process.env.TEST_MSG) {
   process.exit(0);
 }
 
+// 0) Avisos escritos por el cuerpo técnico desde la app (colección "messages")
+const pend = await db.collection("messages").where("status", "==", "pending").get();
+for (const doc of pend.docs) {
+  const m = doc.data();
+  let targets = users;
+  if (m.target === "pending_wellness" || m.target === "pending_rpe") {
+    const col = m.target === "pending_wellness" ? "wellness" : "rpe";
+    const done = new Set((await db.collection(col).where("date", "==", today).get()).docs.map(d => d.data().uid));
+    targets = users.filter(u => !done.has(u.uid));
+  } else if (m.target === "some") targets = users.filter(u => (m.uids || []).includes(u.uid));
+  await send(targets, "Wellness DHF", String(m.text || "").slice(0, 250), m.target === "pending_wellness" ? `${SITE_URL}?f=wellness` : m.target === "pending_rpe" ? `${SITE_URL}?f=rpe` : SITE_URL, "msg-" + doc.id);
+  await doc.ref.update({ status: "sent", sentAt: Date.now(), count: targets.length });
+}
+
 // 1) Wellness a la hora indicada (con margen de 4 h por si GitHub se retrasa)
 const wT = t2m(sch.wellnessTime);
 if (!state.wellness && nowMin >= wT && nowMin < wT + 240) {

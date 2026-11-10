@@ -93,7 +93,7 @@
   function go(t) {
     tab = t; window.scrollTo(0, 0);
     view.classList.toggle("wide", !!me.isCoach);
-    if (me.isCoach) { setTabs([["equipo", "👥", "Equipo"], ["jugadora", "📈", "Jugadora"], ["horario", "🗓️", "Horario"]]); ({ equipo: renderTeam, jugadora: renderPlayerCoach, horario: renderSchedule })[t](); }
+    if (me.isCoach) { setTabs([["equipo", "👥", "Equipo"], ["jugadora", "📈", "Jugadora"], ["avisos", "📣", "Avisos"], ["horario", "🗓️", "Horario"]]); ({ equipo: renderTeam, jugadora: renderPlayerCoach, avisos: renderMessages, horario: renderSchedule })[t](); }
     else { setTabs([["hoy", "🏑", "Hoy"], ["evolucion", "📈", "Mi evolución"]]); ({ hoy: renderToday, evolucion: renderMine })[t](); }
   }
 
@@ -411,6 +411,7 @@
       <div class="row" style="margin-bottom:12px"><h2 class="grow" style="margin:0">Equipo · ${fmtDate(d)}</h2>
         <button class="sec" id="dPrev">‹</button><input type="date" id="tDate" value="${d}" style="width:auto"><button class="sec" id="dNext">›</button>
         <button class="sec" id="bRef">↻</button><button id="bTeamXls">⬇ Excel equipo</button></div>
+      ${d === U.today() && players.length - wToday.length > 0 ? `<div class="alert">📣 <div><b>${players.length - wToday.length} jugadoras</b> no han hecho el wellness de hoy. <button id="bRemind" style="margin-left:6px;padding:6px 12px">Mandarles un aviso</button></div></div>` : ""}
       <div class="stats">
         <div class="stat"><span>Wellness respondidos</span><b>${wToday.length}/${players.length}</b><small>${players.length - wToday.length} pendientes</small></div>
         <div class="stat"><span>Índice wellness medio</span><b>${avg ?? "—"}${avg != null ? "%" : ""}</b><small>${idxPill(avg)}</small></div>
@@ -439,6 +440,7 @@
     $("#dPrev").onclick = () => { teamDate = U.addDays(teamDate, -1); renderTeam(); };
     $("#dNext").onclick = () => { teamDate = U.addDays(teamDate, 1); renderTeam(); };
     $("#bRef").onclick = async () => { await teamData(true); renderTeam(); };
+    if ($("#bRemind")) $("#bRemind").onclick = () => { msgDraft = { target: "pending_wellness", text: "¡Buenos días! Aún no has rellenado el wellness de hoy, son 30 segundos 🙏🏑" }; go("avisos"); };
     $("#bTeamXls").onclick = () => XLSX.download(`Equipo_${(CFG.teamName || "").replace(/\W+/g, "_")}_${U.today()}.xlsx`, XLSX.build(teamBook(players, W, R)));
   }
 
@@ -452,6 +454,38 @@
     $("#selP").onchange = e => { selPlayer = e.target.value; renderPlayerCoach(); };
     const w = W.filter(x => x.uid === p.uid), r = R.filter(x => x.uid === p.uid);
     evolution($("#evo"), p.name, w, r, () => XLSX.download(fileName(p.name), XLSX.build(playerBook(p.name, w, r))));
+  }
+
+  /* ---------- PREPARADOR: avisos manuales ---------- */
+  let msgDraft = null;
+  async function renderMessages() {
+    view.innerHTML = '<p class="muted center pad">Cargando…</p>';
+    const [{ W, R, players }, hist] = await Promise.all([teamData(true), Store.listMessages().catch(() => [])]);
+    const d = U.today(), doneW = new Set(W.filter(w => w.date === d).map(w => w.uid)), doneR = new Set(R.filter(r => r.date === d).map(r => r.uid));
+    const m = msgDraft || { target: "all", text: "" }; msgDraft = null;
+    const TG = { all: ["Todas", players.length], pending_wellness: ["Sin wellness hoy", players.filter(p => !doneW.has(p.uid)).length], pending_rpe: ["Sin RPE hoy", players.filter(p => !doneR.has(p.uid)).length], some: ["Elegir jugadoras", null] };
+    const TPL = ["¡Buenos días! Aún no has rellenado el wellness de hoy, son 30 segundos 🙏🏑", "Recordad registrar el RPE del entreno de hoy 💪", "Mañana hay partido: dormid bien e hidrataos 💧"];
+    view.innerHTML = `<h2>Mandar un aviso</h2>
+      <div class="card"><label class="f" style="margin-top:0">¿A quién?</label>
+        <div class="types" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr))" id="tg">${Object.entries(TG).map(([k, [n, c]]) => `<button data-k="${k}" class="${m.target === k ? "on" : ""}">${n}${c != null ? ` (${c})` : ""}</button>`).join("")}</div>
+        <div id="pickBox" class="${m.target === "some" ? "" : "hidden"}" style="margin-top:10px;max-height:260px;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:8px">
+          ${players.map(p => `<label style="display:flex;gap:8px;align-items:center;padding:5px 2px;font-size:14px"><input type="checkbox" value="${p.uid}" style="width:auto"> ${esc(p.name)} <span class="muted" style="font-size:12px">${doneW.has(p.uid) ? "✓ wellness" : "sin wellness"}${p.hasPush === false ? " · sin avisos activados" : ""}</span></label>`).join("")}</div>
+        <label class="f">Mensaje</label><textarea id="mText" maxlength="250" placeholder="Escribe el mensaje que les saltará en el móvil">${esc(m.text)}</textarea>
+        <div class="row" style="margin-top:8px;gap:6px">${TPL.map((t, i) => `<button class="sec" data-tpl="${i}" style="padding:6px 10px;font-size:12px;font-weight:500">${esc(t.slice(0, 34))}…</button>`).join("")}</div>
+        <p><button class="full" id="mSend">📣 Enviar aviso</button></p>
+        <p class="muted" style="font-size:12px;margin:0">Llega en unos minutos (máx. ~10): el aviso sale en la siguiente vuelta del programador. Solo lo reciben quienes tienen las notificaciones activadas.</p></div>
+      <div class="card"><h3>Últimos avisos</h3>${hist.map(h => `<div class="task"><div class="t"><b>${esc(h.text)}</b><span>${new Date(h.ts).toLocaleString("es-ES", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })} · ${esc((TG[h.target] || ["Elegidas"])[0])}${h.target === "some" ? ` (${(h.uids || []).length})` : ""}</span></div><span class="pill ${h.status === "sent" ? "ok" : "warn"}">${h.status === "sent" ? `✓ enviado a ${h.count ?? "?"}` : h.status === "demo" ? "demo" : "⏳ en cola"}</span></div>`).join("") || '<p class="muted">Todavía no has mandado ninguno.</p>'}</div>`;
+    let target = m.target;
+    view.querySelectorAll("#tg button").forEach(b => b.onclick = () => { target = b.dataset.k; view.querySelectorAll("#tg button").forEach(x => x.classList.toggle("on", x === b)); $("#pickBox").classList.toggle("hidden", target !== "some"); });
+    view.querySelectorAll("[data-tpl]").forEach(b => b.onclick = () => $("#mText").value = TPL[+b.dataset.tpl]);
+    $("#mSend").onclick = async () => {
+      const text = $("#mText").value.trim(); if (text.length < 3) return toast("Escribe el mensaje");
+      const uids = target === "some" ? [...view.querySelectorAll("#pickBox input:checked")].map(i => i.value) : [];
+      if (target === "some" && !uids.length) return toast("Elige al menos una jugadora");
+      $("#mSend").disabled = true;
+      try { await Store.sendMessage({ text, target, uids, date: d }); toast(Store.mode === "demo" ? "En modo demo no se envía de verdad" : "Aviso en cola ✓ llegará en unos minutos"); renderMessages(); }
+      catch (e) { toast("Error: " + e.message); $("#mSend").disabled = false; }
+    };
   }
 
   /* ---------- PREPARADOR: horario ---------- */

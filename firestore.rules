@@ -28,6 +28,11 @@ service cloud.firestore {
     }
     match /config/schedule { allow read: if signedIn(); allow write: if isCoach(); }
     match /config/admins   { allow read: if signedIn(); allow write: if false; }
+    match /messages/{id} {
+      allow read: if isCoach();
+      allow create: if isCoach() && request.resource.data.status == 'pending'
+        && request.resource.data.text is string && request.resource.data.text.size() <= 250;
+    }
     match /system/{doc}    { allow read, write: if false; }   // solo el script de avisos
   }
 }
