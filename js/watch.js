@@ -27,8 +27,16 @@
     return null;
   }
 
+  // Corrige confusiones típicas del OCR (Ipm→lpm, O→0, Th→7h…)
+  function norm(raw) {
+    return raw.replace(/\r/g, "")
+      .replace(/\b[Il1]pm\b/g, "lpm")
+      .replace(/\bZONA\s*O\b/gi, "ZONA 0").replace(/\b(ZONA|ZONE)\s*S\b/gi, "$1 5").replace(/\b(ZONA|ZONE)\s*[Il|]\b/gi, "$1 1").replace(/\b(zona|zone)\s*([0-9])/gi, "$1 $2")
+      .replace(/\bO(?=[:.,]?\d)/g, "0").replace(/(\d[:.,])O\b/g, "$10")
+      .replace(/\bT(?=h\s*\d)/g, "7").replace(/\b(\d{1,2})h(\d{1,2})m\b/g, "$1h $2m");
+  }
   function parse(raw) {
-    const t = raw.replace(/\r/g, "");
+    const t = norm(raw);
     const o = {};
     // Sueño total: junto a "dormido / asleep / tiempo dormido" o la primera duración con horas
     let tot = after(t, "(tiempo dormido|time asleep|asleep|sueño total|total sleep)", DUR, 60);
@@ -73,11 +81,12 @@
     { k: "hrMax", n: "FC máxima", u: "lpm" },
     { k: "deviceLoad", n: "Carga del reloj", u: "" },
     { k: "deviceRpe", n: "Esfuerzo del reloj", u: "/10" },
-    { k: "z1", n: "Zona 1", u: "min" }, { k: "z2", n: "Zona 2", u: "min" }, { k: "z3", n: "Zona 3", u: "min" },
+    { k: "hrRecovery", n: "FC de recuperación", u: "lpm" },
+    { k: "z0", n: "Zona 0", u: "min" }, { k: "z1", n: "Zona 1", u: "min" }, { k: "z2", n: "Zona 2", u: "min" }, { k: "z3", n: "Zona 3", u: "min" },
     { k: "z4", n: "Zona 4", u: "min" }, { k: "z5", n: "Zona 5", u: "min" }
   ];
   function parseWorkout(raw) {
-    const t = raw.replace(/\r/g, ""), o = {};
+    const t = norm(raw), o = {};
     const hms = after(t, "(tiempo de entrenamiento|duraci[oó]n|workout time|total time|duration|tiempo total)", /(\d{1,2}):(\d{2}):(\d{2})/, 40);
     if (hms) o.durationMin = +hms[1] * 60 + +hms[2] + Math.round(+hms[3] / 60);
     else { const d = after(t, "(tiempo de entrenamiento|duraci[oó]n|workout time|total time|duration|tiempo total)", DUR, 40) || t.match(/(\d{1,2})\s*h\s*(\d{1,2})\s*m(?:in)?(?![a-z])/i); if (d) o.durationMin = d.length === 3 ? +d[1] * 60 + +d[2] : toMin(d); }
@@ -99,7 +108,9 @@
     const ld = t.match(/(\d{1,4}(?:[,.]\d)?)\s*\n?\s*(carga|load|strain|trimp)\b/i) || after(t, "\\b(carga|training load|strain|trimp)\\b", /(\d{1,4}(?:[,.]\d)?)/, 25);
     o.deviceLoad = ld ? num(ld[1]) : null;
     if (o.deviceLoad == null) { const m = t.match(/\d{1,2}\s*h\s*\d{1,2}\s*m(?:in)?\s+(\d{1,4}[,.]\d)\b/i); if (m) o.deviceLoad = num(m[1]); }
-    for (const m of t.matchAll(/\b(?:zona|zone)\s*([1-5])\b[^\n]*?\b(\d{1,3}):(\d{2})\b/gi)) { const k = "z" + m[1]; if (o[k] == null) o[k] = Math.round((+m[2] + +m[3] / 60) * 10) / 10; }
+    for (const m of t.matchAll(/\b(?:zona|zone)\s*([0-5])\b[^\n]*?(?<![\d:])(?:(\d{1,2}):)?(\d{1,3}):(\d{2})\b/gi)) { const k = "z" + m[1]; if (o[k] == null) o[k] = Math.round(((+m[2] || 0) * 60 + +m[3] + +m[4] / 60) * 10) / 10; }
+    const rec = after(t, "(FC de recuperaci[oó]n|recuperaci[oó]n de (la )?FC|heart rate recovery|HR recovery)", /(?<![\d,.])(\d{2,3})\s*(lpm|bpm|ppm)/i, 80);
+    o.hrRecovery = rec ? +rec[1] : null;
     if (o.hrAvg != null && (o.hrAvg < 50 || o.hrAvg > 220)) o.hrAvg = null;
     if (o.hrMax != null && (o.hrMax < 80 || o.hrMax > 230)) o.hrMax = null;
     if (o.durationMin != null && (o.durationMin < 5 || o.durationMin > 600)) o.durationMin = null;
@@ -116,15 +127,33 @@
       document.head.appendChild(s);
     });
   }
+  // Mejora la imagen: escala ×2, escala de grises, invierte si es modo oscuro y binariza (el gris claro pasa a negro)
+  async function preprocess(file) {
+    const bmp = await createImageBitmap(file);
+    const c = document.createElement("canvas"); c.width = bmp.width * 2; c.height = bmp.height * 2;
+    const g = c.getContext("2d"); g.imageSmoothingQuality = "high"; g.drawImage(bmp, 0, 0, c.width, c.height);
+    const d = g.getImageData(0, 0, c.width, c.height), px = d.data; let sum = 0;
+    for (let i = 0; i < px.length; i += 4) { const y = 0.299 * px[i] + 0.587 * px[i + 1] + 0.114 * px[i + 2]; px[i] = y; sum += y; }
+    const dark = sum / (px.length / 4) < 110;
+    for (let i = 0; i < px.length; i += 4) { let y = px[i]; if (dark) y = 255 - y; const v = y < 215 ? 0 : 255; px[i] = px[i + 1] = px[i + 2] = v; px[i + 3] = 255; }
+    g.putImageData(d, 0, 0);
+    return c;
+  }
   async function readImages(files, onProgress, parser = parse) {
     const T = await loadTesseract();
-    const out = {}; let i = 0;
-    for (const f of files) {
-      const { data } = await T.recognize(f, "spa+eng", { logger: m => m.status === "recognizing text" && onProgress && onProgress((i + m.progress) / files.length) });
-      const p = parser(data.text);
-      for (const k in p) if (p[k] != null && out[k] == null) out[k] = p[k];
-      i++;
-    }
+    let step = 0; const total = files.length * 2;
+    const worker = await T.createWorker("spa+eng", 1, { logger: m => m.status === "recognizing text" && onProgress && onProgress((step + m.progress) / total) });
+    const out = {};
+    try {
+      for (const f of files) {
+        await worker.setParameters({ tessedit_pageseg_mode: "4" });          // filas alineadas (tablas, columnas)
+        const a = (await worker.recognize(await preprocess(f))).data.text; step++;
+        await worker.setParameters({ tessedit_pageseg_mode: "3" });          // lectura normal
+        const b = (await worker.recognize(f)).data.text; step++;
+        const pa = parser(a), pb = parser(b);
+        for (const k of new Set([...Object.keys(pa), ...Object.keys(pb)])) { const v = pa[k] ?? pb[k]; if (v != null && out[k] == null) out[k] = v; }
+      }
+    } finally { await worker.terminate(); }
     return out;
   }
   const fmtDur = m => m == null ? "" : `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, "0")}m`;
