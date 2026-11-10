@@ -11,7 +11,8 @@
     { k: "hrRest", n: "FC basal", u: "lpm" },
     { k: "hrv", n: "VFC (HRV)", u: "ms" },
     { k: "tempDev", n: "Temperatura (desv.)", u: "°C" },
-    { k: "resp", n: "Frec. respiratoria", u: "rpm" }
+    { k: "resp", n: "Frec. respiratoria", u: "rpm" },
+    { k: "bodyBattery", n: "Body Battery (cambio)", u: "" }
   ];
   const DUR = /(\d{1,2})\s*h(?:oras?|rs?)?\s*(?:(\d{1,2})\s*m(?:in)?)?(?![a-z])|(\d{1,3})\s*m(?:in)?(?![a-zá])/i;
   const toMin = m => m ? (m[1] != null ? +m[1] * 60 + (+m[2] || 0) : +m[3]) : null;
@@ -40,18 +41,24 @@
     const o = {};
     // Sueño total: junto a "dormido / asleep / tiempo dormido" o la primera duración con horas
     let tot = after(t, "(tiempo dormido|time asleep|asleep|sueño total|total sleep)", DUR, 60);
-    if (!tot) { const m = t.match(/(\d{1,2})\s*h\s*(\d{1,2})\s*m(?:in)?(?![a-z])/i); if (m) tot = [m[0], m[1], m[2]]; }
+    const weak = [];
+    if (!tot) { const m = t.match(/(\d{1,2})\s*h\s*(\d{1,2})\s*m(?:in)?(?![a-z])/i); if (m) { tot = [m[0], m[1], m[2]]; weak.push("sleepMin"); } }
     o.sleepMin = toMin(tot);
-    const ST = { deepMin: "\\b(profundo|deep)\\b", remMin: "\\bREM\\b", lightMin: "\\b(ligero|esencial|core|light)\\b", awakeMin: "\\b(despiert[oa]|awake)\\b" };
+    const ST = { deepMin: "\\b(profundo|deep)\\b", remMin: "\\b(REM|MOR)\\b", lightMin: "\\b(ligero|esencial|core|light)\\b", awakeMin: "\\b(despiert[oa]|awake)\\b" };
     // Columnas: una línea con varias etiquetas y debajo una línea con varias duraciones
-    const lines = t.split("\n");
+    const lines = t.split("\n"), labLines = [];
     lines.forEach((ln, i) => {
       const labs = Object.entries(ST).map(([k, r]) => { const m = ln.match(new RegExp(r, "i")); return m ? { k, at: m.index } : null; }).filter(Boolean).sort((a, b) => a.at - b.at);
-      if (labs.length < 2) return;
-      for (let j = i + 1; j < Math.min(lines.length, i + 4); j++) {
-        const durs = [...lines[j].matchAll(new RegExp(DUR.source, "gi"))];
-        if (durs.length >= labs.length) { labs.forEach((l, n) => { if (o[l.k] == null) o[l.k] = toMin(durs[n]); }); break; }
-      }
+      if (labs.length >= 2) labLines.push({ i, labs });
+    });
+    // ¿Los valores van encima de las etiquetas (Garmin) o debajo?
+    const dursOf = j => j >= 0 && j < lines.length ? [...lines[j].matchAll(new RegExp(DUR.source, "gi"))] : [];
+    const prevIdx = i => { let j = i - 1; while (j >= 0 && !lines[j].trim()) j--; return j; };
+    const nextIdx = i => { let j = i + 1; while (j < lines.length && !lines[j].trim()) j++; return j; };
+    const above = labLines.some(L => dursOf(prevIdx(L.i)).length >= L.labs.length && dursOf(nextIdx(L.i)).length < L.labs.length);
+    labLines.forEach(L => {
+      const durs = dursOf(above ? prevIdx(L.i) : nextIdx(L.i));
+      if (durs.length >= L.labs.length) L.labs.forEach((l, n) => { if (o[l.k] == null) o[l.k] = toMin(durs[n]); });
     });
     for (const [k, r] of Object.entries(ST)) if (o[k] == null) o[k] = toMin(after(t, r, DUR));
     const hr = after(t, "(FC basal|FC en reposo|frecuencia card[ií]aca en reposo|resting heart rate|resting hr|RHR)", /(\d{2,3})\s*(lpm|bpm|ppm)?/i, 60);
@@ -63,14 +70,31 @@
     const tp = after(t, "(temperatura|temperature|temp\\.)", /([-−+]?\s?\d{1,2}[,.]\d)/, 40);
     o.tempDev = tp ? num(tp[1].replace(/\s/g, "")) : null;
     if (o.tempDev != null && Math.abs(o.tempDev) > 5) o.tempDev = null;   // no es una desviación
-    const sc = t.match(/^\s*(\d{2,3})\s*\n+\s*(bien|excelente|[oó]ptim[oa]|regular|bajo|mal|good|excellent|optimal|fair|poor|pay attention)\b/im)
-      || after(t, "(puntuaci[oó]n|sleep score|score)", /\b(\d{2,3})\b/, 40);
+    const sc = t.match(/^\s*(\d{2,3})\s*\n+\s*(bien|excelente|[oó]ptim[oa]|regular|bajo|mal|good|excellent|optimal|fair|poor|pay attention)\b/im);
     o.sleepScore = sc && +sc[1] <= 100 ? +sc[1] : null;
+    // Valor en su propia línea y la etiqueta justo debajo (formato Garmin y similares): tiene prioridad
+    const VA = [
+      ["sleepMin", /^(total dormid|tiempo total|total sleep|sueño total)/i, "dur"],
+      ["hrRest", /(frecuencia card[ií]aca en reposo|FC en reposo|resting heart|resting hr)/i, /^\s*(\d{2,3})\s*(ppm|lpm|bpm)\s*$/i],
+      ["hrv", /(\bVFC\b|\bHRV\b|variabilidad)/i, /^\s*(\d{2,3})\s*ms\s*$/i],
+      ["resp", /(respiraci[oó]n media|frec\.?\s*resp|respiratory rate|respiration)/i, /^\s*(\d{1,2}(?:[,.]\d)?)\s*(brpm|rpm|resp\/min)\s*$/i],
+      ["bodyBattery", /body battery/i, /^\s*([+-]?\s?\d{1,3})\s*$/],
+      ["sleepScore", /^(puntuaci[oó]n( de)? (del )?sueño|sleep score)\s*$/i, /^\s*(\d{2,3})\s*$/]
+    ];
+    lines.forEach((ln, i) => {
+      const pj = prevIdx(i); if (pj < 0) return;
+      for (const [k, labRe, valRe] of VA) {
+        if (!labRe.test(ln.trim())) continue;
+        if (valRe === "dur") { const m = lines[pj].match(new RegExp("^\\s*(" + DUR.source + ")\\s*$", "i")); if (m) { o[k] = toMin(lines[pj].match(DUR)); const w = weak.indexOf(k); if (w >= 0) weak.splice(w, 1); } }
+        else { const m = lines[pj].match(valRe); if (m) o[k] = num(m[1].replace(/\s/g, "")); }
+      }
+    });
     // coherencia
     ["deepMin", "remMin", "lightMin", "awakeMin"].forEach(k => { if (o[k] != null && o.sleepMin != null && o[k] > o.sleepMin + 60) o[k] = null; });
     if (o.hrRest != null && (o.hrRest < 30 || o.hrRest > 120)) o.hrRest = null;
     if (o.hrv != null && (o.hrv < 5 || o.hrv > 300)) o.hrv = null;
     if (o.resp != null && (o.resp < 6 || o.resp > 40)) o.resp = null;
+    Object.defineProperty(o, "_weak", { value: weak, enumerable: false });
     return o;
   }
 
@@ -139,9 +163,19 @@
     g.putImageData(d, 0, 0);
     return c;
   }
+  // Une lecturas: un valor "seguro" gana a uno "débil"; entre iguales, el primero
+  function merge(out, parts) {
+    out._w = out._w || {};
+    for (const p of parts) for (const k of Object.keys(p)) {
+      if (p[k] == null) continue;
+      const w = (p._weak || []).includes(k);
+      if (out[k] == null || (out._w[k] && !w)) { out[k] = p[k]; out._w[k] = w; }
+    }
+    return out;
+  }
   async function readImages(files, onProgress, parser = parse) {
     const T = await loadTesseract();
-    let step = 0; const total = files.length * 2;
+    let step = 0; const total = files.length * 3;
     const worker = await T.createWorker("spa+eng", 1, { logger: m => m.status === "recognizing text" && onProgress && onProgress((step + m.progress) / total) });
     const out = {};
     try {
@@ -150,15 +184,17 @@
         const a = (await worker.recognize(await preprocess(f))).data.text; step++;
         await worker.setParameters({ tessedit_pageseg_mode: "3" });          // lectura normal
         const b = (await worker.recognize(f)).data.text; step++;
-        const pa = parser(a), pb = parser(b);
-        for (const k of new Set([...Object.keys(pa), ...Object.keys(pb)])) { const v = pa[k] ?? pb[k]; if (v != null && out[k] == null) out[k] = v; }
+        await worker.setParameters({ tessedit_pageseg_mode: "11" });         // texto disperso (números grandes, anillos)
+        const c = (await worker.recognize(f)).data.text; step++;
+        merge(out, [parser(a), parser(b), parser(c)]);
       }
     } finally { await worker.terminate(); }
+    delete out._w;
     return out;
   }
   const fmtDur = m => m == null ? "" : `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, "0")}m`;
   const parseDur = s => { if (s == null || s === "") return null; s = String(s).trim(); if (/^\d+$/.test(s)) return +s; const m = s.match(DUR); return toMin(m); };
 
-  root.Watch = { FIELDS, WORKOUT_FIELDS, parse, parseWorkout, readImages, fmtDur, parseDur };
+  root.Watch = { merge, FIELDS, WORKOUT_FIELDS, parse, parseWorkout, readImages, fmtDur, parseDur };
   if (typeof module !== "undefined") module.exports = root.Watch;
 })(typeof self !== "undefined" ? self : globalThis);
