@@ -40,7 +40,14 @@
     const t = norm(raw);
     const o = {};
     // Sueño total: junto a "dormido / asleep / tiempo dormido" o la primera duración con horas
-    let tot = after(t, "(tiempo dormido|time asleep|asleep|sueño total|total sleep)", DUR, 60);
+    const L0 = t.split("\n");
+    // Whoop: "HORAS DE SUEÑO" y en la línea siguiente "7:49"
+    let tot = null;
+    L0.forEach((ln, i) => { if (tot || !/^\s*(horas de sue[ñn]o|hours of sleep)\s*$/i.test(ln)) return; for (let j = i + 1; j < Math.min(L0.length, i + 3); j++) { const m = L0[j].match(/^\s*(\d{1,2})[:.](\d{2})\b/); if (m) { tot = [m[0], m[1], m[2]]; break; } } });
+    // Whoop: etapas con formato h:mm al final de la línea ("LIGERO 42% 3:35")
+    const STW = { awakeMin: /\b(despiert[oa]|awake)\b/i, lightMin: /\b(ligero|light)\b/i, deepMin: /\b(profundo|SWS|deep)\b/i, remMin: /\bREM\b/i };
+    L0.forEach(ln => { const m = ln.match(/\b(\d{1,2}):(\d{2})\s*$/); if (!m) return; for (const [k, r] of Object.entries(STW)) if (r.test(ln) && o[k] == null && !/duraci[oó]n/i.test(ln)) { o[k] = +m[1] * 60 + +m[2]; break; } });
+    if (!tot) tot = after(t, "(tiempo dormido|time asleep|asleep|sueño total|total sleep)", DUR, 60);
     const weak = [];
     if (!tot) { const m = t.match(/(\d{1,2})\s*h\s*(\d{1,2})\s*m(?:in)?(?![a-z])/i); if (m) { tot = [m[0], m[1], m[2]]; weak.push("sleepMin"); } }
     o.sleepMin = toMin(tot);
@@ -79,7 +86,8 @@
       ["hrv", /(\bVFC\b|\bHRV\b|variabilidad)/i, /^\s*(\d{2,3})\s*ms\s*$/i],
       ["resp", /(respiraci[oó]n media|frec\.?\s*resp|respiratory rate|respiration)/i, /^\s*(\d{1,2}(?:[,.]\d)?)\s*(brpm|rpm|resp\/min)\s*$/i],
       ["bodyBattery", /body battery/i, /^\s*([+-]?\s?\d{1,3})\s*$/],
-      ["sleepScore", /^(puntuaci[oó]n( de)? (del )?sueño|sleep score)\s*$/i, /^\s*(\d{2,3})\s*$/]
+      ["sleepScore", /^(puntuaci[oó]n( de)? (del )?sueño|sleep score)\s*$/i, /^\s*(\d{2,3})\s*$/],
+      ["sleepScore", /^(calificaci[oó]n|sleep performance)/i, /^\s*(\d{2,3})\s*[%»,.°]*\s*$/]
     ];
     lines.forEach((ln, i) => {
       const pj = prevIdx(i); if (pj < 0) return;

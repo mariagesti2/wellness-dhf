@@ -32,7 +32,7 @@ function instalar() {
 /* ---------- Firestore REST ---------- */
 function api_(method, url, body) {
   const r = UrlFetchApp.fetch(url, { method, contentType: "application/json", payload: body ? JSON.stringify(body) : undefined,
-    headers: { Authorization: "Bearer " + ScriptApp.getOAuthToken() }, muteHttpExceptions: true });
+    headers: { Authorization: "Bearer " + ScriptApp.getOAuthToken(), "x-goog-user-project": PROJECT }, muteHttpExceptions: true });
   const code = r.getResponseCode();
   if (code === 404) return null;
   if (code >= 300) throw new Error(method + " " + url + " → " + code + " " + r.getContentText().slice(0, 300));
@@ -84,7 +84,7 @@ function send_(targets, title, body, url, tag) {
   if (!targets.length) return 0;
   const list = []; targets.forEach(u => (u.tokens || []).forEach(t => list.push({ t, u })));
   const reqs = list.map(x => ({ url: `https://fcm.googleapis.com/v1/projects/${PROJECT}/messages:send`, method: "post", contentType: "application/json", muteHttpExceptions: true,
-    headers: { Authorization: "Bearer " + ScriptApp.getOAuthToken() },
+    headers: { Authorization: "Bearer " + ScriptApp.getOAuthToken(), "x-goog-user-project": PROJECT },
     payload: JSON.stringify({ message: { token: x.t, data: { title, body, url, tag }, webpush: { headers: { Urgency: "high", TTL: "21600" } } } }) }));
   const res = UrlFetchApp.fetchAll(reqs);
   let ok = 0; const bad = {};
