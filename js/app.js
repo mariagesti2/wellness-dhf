@@ -212,7 +212,7 @@
     if (ses && ses.type !== type) ses = null;
     const slot = ses ? ses.id : type;
     const existing = R.find(r => ses ? slotMatch(r, ses) : (r.slot || r.type) === slot);
-    let st = { type, rpe: existing?.rpe || null, minutes: existing?.minutes || null, psych: existing?.psych || null, refl: existing?.reflection || "" };
+    let st = { type, rpe: existing?.rpe || null, minutes: existing?.minutes || null, psych: existing?.psych || null, refl: existing?.reflection || "", watch: { ...(existing?.watch || {}) } };
     const askPsych = () => st.type !== "gym";
     const defMin = t => { const s = ses || sess.find(x => x.type === t); return s ? U.minutesBetween(s.start, s.end) : (t === "partido" ? 60 : t === "gym" ? 60 : 90); };
     if (!st.minutes) st.minutes = defMin(type);
@@ -226,6 +226,12 @@
         <div class="rpe-desc">${st.rpe ? `<b>${st.rpe} · ${RPE[st.rpe].t}.</b> ${RPE[st.rpe].d}` : '<span class="muted">Toca un número para ver la descripción.</span>'}</div>
         <label class="f">Duración (minutos)</label><input type="number" id="rMin" inputmode="numeric" min="1" max="300" value="${st.minutes}">
         <div class="load-box"><span>Carga de la sesión (RPE × minutos)</span><b id="rLoad">${st.rpe ? st.rpe * st.minutes : "—"}</b></div>
+        <div class="watch-box"><h3>⌚ Datos del reloj <span class="muted" style="font-weight:400">(opcional)</span></h3>
+          <p class="muted" style="font-size:13px;margin:0 0 10px">Sube la captura del entrenamiento de tu reloj (pulso, zonas, calorías…). Se lee en tu móvil y puedes corregir cualquier valor.</p>
+          <label class="btn" style="width:100%">📷 Añadir captura(s)<input type="file" id="rImg" accept="image/*" multiple hidden></label>
+          <div id="rOcr" class="muted" style="font-size:13px;margin-top:6px">${esc(st.ocrMsg || "")}</div>
+          <div class="watch-grid">${Watch.WORKOUT_FIELDS.map(f => { const x = st.watch[f.k]; const val = x != null ? (f.dur ? Watch.fmtDur(x) : x) : "";
+            return `<label><span>${f.n} <i>${f.dur ? "ej. 1h 30m" : f.u}</i></span><input data-rk="${f.k}" ${f.dur ? 'type="text"' : 'type="number" step="any" inputmode="decimal"'} placeholder="—" value="${esc(val)}"></label>`; }).join("")}</div></div>
         ${askPsych() ? `<div style="margin-top:22px;padding-top:6px;border-top:1px solid var(--line)"><h3 style="margin-top:14px">Bienestar psicológico durante el entrenamiento/partido</h3>
           <label class="f">¿Qué puntuación le darías a tu bienestar psicológico en el entrenamiento/partido de hoy?</label>
           <p class="muted" style="font-size:12px;margin:0 0 8px">Ten en cuenta: GESTIÓN DE LAS EMOCIONES (control de la impulsividad: evitar quejarse, golpear, movimientos con los brazos por inconformidad, quejarse por arbitraje, etc.) · CONCENTRACIÓN EN EL TRABAJO (atender explicaciones y directrices de compañeras, sin distraerte con pensamientos o emociones que te perjudican) · BAJO NIVEL DE ERROR (acierto elevado en las ejecuciones y tolerancia al error: el error no te paraliza ni te distrae) · COMUNICACIÓN EFECTIVA (buena comunicación verbal y no verbal con compañeras y staff) · MOTIVACIÓN, ACTITUD POSITIVA Y COMPAÑERISMO (satisfacción con el trabajo, te superas respecto al entreno anterior, animas a tus compañeras y no hablas mal de ellas, etc.)</p>
@@ -239,6 +245,21 @@
       view.querySelectorAll(".rpe-grid button").forEach(b => b.onclick = () => { st.rpe = +b.dataset.v; st.minutes = +$("#rMin").value || st.minutes; draw(); });
       if ($("#psy")) $("#psy").querySelectorAll("button").forEach(b => b.onclick = () => { st.psych = +b.dataset.v; $("#psy").querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b)); $("#reflReq").textContent = st.psych <= 3 ? "(obligatoria)" : ""; });
       if ($("#rRefl")) $("#rRefl").oninput = e => st.refl = e.target.value;
+      view.querySelectorAll("[data-rk]").forEach(inp => inp.oninput = () => { const f = Watch.WORKOUT_FIELDS.find(x => x.k === inp.dataset.rk), raw = inp.value.trim(); const val = !raw ? null : f.dur ? Watch.parseDur(raw) : +raw.replace(",", "."); if (val == null || !isFinite(val)) delete st.watch[f.k]; else st.watch[f.k] = val; });
+      $("#rImg").onchange = async e => {
+        const files = [...e.target.files]; if (!files.length) return;
+        const msg = $("#rOcr"); msg.textContent = "Cargando el lector… (la primera vez tarda unos segundos)";
+        try {
+          const r = await Watch.readImages(files, p => msg.textContent = `Leyendo captura… ${Math.round(p * 100)}%`, Watch.parseWorkout);
+          const n = Object.keys(r).filter(k => r[k] != null).length;
+          Object.entries(r).forEach(([k, v]) => { if (v != null) st.watch[k] = v; });
+          const notes = [];
+          if (r.deviceRpe && !st.rpe) { st.rpe = r.deviceRpe; notes.push(`RPE ${r.deviceRpe} del reloj`); }
+          if (r.durationMin) { st.minutes = r.durationMin; notes.push(`duración ${r.durationMin} min`); }
+          st.ocrMsg = n ? `✓ ${n} datos leídos${notes.length ? " · he puesto " + notes.join(" y ") + " arriba" : ""}. Revísalos antes de guardar.` : "No he encontrado datos en la imagen. Puedes escribirlos a mano.";
+          draw();
+        } catch (err) { msg.textContent = err.message + " · Puedes escribir los datos a mano."; }
+      };
       $("#rMin").oninput = e => { st.minutes = +e.target.value; $("#rLoad").textContent = st.rpe && st.minutes ? st.rpe * st.minutes : "—"; };
       $("#rDate").onchange = e => showRpe(st.type, e.target.value);
       $("#rBack").onclick = () => go("hoy");
@@ -250,7 +271,7 @@
         if (askPsych() && !st.psych) return toast("Puntúa tu bienestar psicológico (1–5)");
         if (askPsych() && st.psych <= 3 && refl.length < 3) return toast("Con 3 o menos, escribe la reflexión");
         $("#rSave").disabled = true;
-        try { await Store.saveRpe({ date: $("#rDate").value, type: st.type, slot, rpe: st.rpe, minutes: min, load: st.rpe * min, psych: askPsych() ? st.psych : null, reflection: askPsych() ? refl : "", comments: $("#rCom").value.trim() }); toast("RPE guardado ✓"); go("hoy"); }
+        try { await Store.saveRpe({ date: $("#rDate").value, type: st.type, slot, rpe: st.rpe, minutes: min, load: st.rpe * min, psych: askPsych() ? st.psych : null, reflection: askPsych() ? refl : "", watch: Object.keys(st.watch).length ? st.watch : null, comments: $("#rCom").value.trim() }); toast("RPE guardado ✓"); go("hoy"); }
         catch (err) { toast("Error: " + err.message); $("#rSave").disabled = false; }
       };
     };
@@ -332,9 +353,10 @@
           { type: "bar", title: "Horas de sueño", catCol: 0, series: [{ col: 1, name: "Sueño (h)", color: "#2a78d6" }], from: { col: 12, row: 1 }, to: { col: 22, row: 17 } },
           { type: "line", title: "VFC (ms)", catCol: 0, series: [{ col: 8, name: "VFC", color: "#1baf7a" }], from: { col: 12, row: 18 }, to: { col: 22, row: 34 } },
           { type: "line", title: "FC basal (lpm)", catCol: 0, series: [{ col: 7, name: "FC basal", color: "#eb6834" }], from: { col: 12, row: 35 }, to: { col: 22, row: 51 } }] }] : []),
-      { name: "RPE", cols: [{ header: "Fecha", width: 12 }, { header: "Tipo", width: 10 }, { header: "RPE (1-10)", width: 11 }, { header: "Minutos", width: 10 }, { header: "Carga (UA)", width: 11 }, { header: "Bienestar psicológico (1-5)", width: 14 }, { header: "Reflexión", width: 50 }, { header: "Comentarios", width: 40 }],
-        rows: Rs.map(r => [r.date, TYPES[r.type].n, r.rpe, r.minutes, r.load, r.psych ?? null, r.reflection || "", r.comments || ""]),
-        charts: [{ type: "line", title: "Bienestar psicológico (1-5)", catCol: 0, series: [{ col: 5, name: "Bienestar psicológico", color: "#2a78d6" }], yMin: 1, yMax: 5, from: { col: 9, row: 1 }, to: { col: 21, row: 19 } }] },
+      { name: "RPE", cols: [{ header: "Fecha", width: 12 }, { header: "Tipo", width: 10 }, { header: "RPE (1-10)", width: 11 }, { header: "Minutos", width: 10 }, { header: "Carga (UA)", width: 11 }, { header: "Bienestar psicológico (1-5)", width: 14 }, { header: "Reflexión", width: 50 }, { header: "Comentarios", width: 40 }, ...Watch.WORKOUT_FIELDS.map(f => ({ header: "⌚ " + f.n + (f.u ? ` (${f.u})` : ""), width: 12 }))],
+        rows: Rs.map(r => [r.date, TYPES[r.type].n, r.rpe, r.minutes, r.load, r.psych ?? null, r.reflection || "", r.comments || "", ...Watch.WORKOUT_FIELDS.map(f => r.watch?.[f.k] ?? null)]),
+        charts: [{ type: "line", title: "Bienestar psicológico (1-5)", catCol: 0, series: [{ col: 5, name: "Bienestar psicológico", color: "#2a78d6" }], yMin: 1, yMax: 5, from: { col: 21, row: 1 }, to: { col: 32, row: 19 } },
+          ...(Rs.some(r => r.watch?.hrAvg) ? [{ type: "line", title: "FC media por sesión (lpm)", catCol: 0, series: [{ col: 10, name: "FC media", color: "#eb6834" }], from: { col: 21, row: 20 }, to: { col: 32, row: 38 } }] : [])] },
       { name: "Carga diaria", cols: [{ header: "Fecha", width: 12 }, { header: "Gym", width: 9 }, { header: "Entreno", width: 9 }, { header: "Partido", width: 9 }, { header: "Total", width: 9 }], rows: daily,
         charts: [{ type: "bar", stacked: true, title: "Carga diaria (RPE × min)", catCol: 0, series: [{ col: 1, name: "Gym", color: TYPES.gym.c }, { col: 2, name: "Entreno", color: TYPES.entreno.c }, { col: 3, name: "Partido", color: TYPES.partido.c }], from: { col: 6, row: 1 }, to: { col: 20, row: 22 } }] },
       { name: "Semanal", cols: [{ header: "Semana (lunes)", width: 14 }, { header: "Gym", width: 9 }, { header: "Entreno", width: 9 }, { header: "Partido", width: 9 }, { header: "Carga total", width: 11 }, { header: "ACWR", width: 8 }, { header: "Wellness medio %", width: 16 }], rows: weekly,
@@ -359,7 +381,7 @@
           { type: "bar", title: "Carga diaria (UA)", catCol: 0, series: [{ col: 7, name: "Carga", color: "#eb6834" }], from: { col: 11, row: 19 }, to: { col: 22, row: 36 } }] });
     });
     sheets.push({ name: "Datos wellness", cols: ["Jugadora", "Fecha", ...METRICS.map(m => m.s), "Índice %", "Comentarios", "Sueño (h)", "Punt. sueño", "FC basal", "VFC (ms)"].map(h => ({ header: h, width: h === "Jugadora" ? 26 : h === "Comentarios" ? 40 : 11 })), rows: [...W].sort((a, b) => a.name.localeCompare(b.name) || a.date.localeCompare(b.date)).map(w => [w.name, w.date, ...METRICS.map(m => w[m.k]), index(w), w.comments || "", w.watch?.sleepMin != null ? Math.round(w.watch.sleepMin / 6) / 10 : null, w.watch?.sleepScore ?? null, w.watch?.hrRest ?? null, w.watch?.hrv ?? null]) });
-    sheets.push({ name: "Datos RPE", cols: ["Jugadora", "Fecha", "Tipo", "RPE", "Minutos", "Carga", "Bienestar psicológico", "Reflexión", "Comentarios"].map(h => ({ header: h, width: h === "Jugadora" ? 26 : h === "Comentarios" || h === "Reflexión" ? 40 : 10 })), rows: [...R].sort((a, b) => a.name.localeCompare(b.name) || a.date.localeCompare(b.date)).map(r => [r.name, r.date, TYPES[r.type].n, r.rpe, r.minutes, r.load, r.psych ?? null, r.reflection || "", r.comments || ""]) });
+    sheets.push({ name: "Datos RPE", cols: ["Jugadora", "Fecha", "Tipo", "RPE", "Minutos", "Carga", "Bienestar psicológico", "Reflexión", "Comentarios", "FC media", "FC máx", "kcal", "Carga reloj"].map(h => ({ header: h, width: h === "Jugadora" ? 26 : h === "Comentarios" || h === "Reflexión" ? 40 : 10 })), rows: [...R].sort((a, b) => a.name.localeCompare(b.name) || a.date.localeCompare(b.date)).map(r => [r.name, r.date, TYPES[r.type].n, r.rpe, r.minutes, r.load, r.psych ?? null, r.reflection || "", r.comments || "", r.watch?.hrAvg ?? null, r.watch?.hrMax ?? null, r.watch?.kcal ?? null, r.watch?.deviceLoad ?? null]) });
     return { sheets };
   }
 
@@ -402,7 +424,7 @@
             ${METRICS.map(m => w ? `<td class="cell ${level(m, w[m.k])}">${w[m.k]}</td>` : '<td class="na">—</td>').join("")}
             <td>${al.length ? `<span class="pill bad">▲ ${al.join(", ")}</span>` : w ? '<span class="pill ok">✓</span>' : ""}</td>
             <td>${w && w.watch ? [w.watch.sleepMin != null ? Watch.fmtDur(w.watch.sleepMin) : "", w.watch.hrv != null ? w.watch.hrv + " ms" : ""].filter(Boolean).join(" · ") : '<span class="muted">—</span>'}</td>
-            <td>${rr.map(x => `${TYPES[x.type].n} <b>${x.rpe}</b>×${x.minutes}${x.psych ? ` · <span class="pill ${x.psych <= 2 ? "bad" : x.psych === 3 ? "warn" : "ok"}" title="${esc(x.reflection || "")}">🧠 ${x.psych}</span>` : ""}`).join("<br>") || '<span class="muted">—</span>'}</td><td><b>${a.acute || ""}</b></td><td>${acwrPill(a.ratio)}</td>${Store.mode === "firebase" ? `<td>${p.hasPush ? "🔔" : '<span class="muted">no</span>'}</td>` : ""}</tr>`; }).join("")}
+            <td>${rr.map(x => `${TYPES[x.type].n} <b>${x.rpe}</b>×${x.minutes}${x.psych ? ` · <span class="pill ${x.psych <= 2 ? "bad" : x.psych === 3 ? "warn" : "ok"}" title="${esc(x.reflection || "")}">🧠 ${x.psych}</span>` : ""}${x.watch && x.watch.hrAvg ? ` · ❤️ ${x.watch.hrAvg}${x.watch.hrMax ? "/" + x.watch.hrMax : ""}` : ""}`).join("<br>") || '<span class="muted">—</span>'}</td><td><b>${a.acute || ""}</b></td><td>${acwrPill(a.ratio)}</td>${Store.mode === "firebase" ? `<td>${p.hasPush ? "🔔" : '<span class="muted">no</span>'}</td>` : ""}</tr>`; }).join("")}
       </table>
       <p class="muted" style="font-size:12px;margin:10px 0 0">Colores: <span class="pill bad">rojo</span> estrés/dolor/fatiga ≥ 4 o sueño/humor ≤ 1 · <span class="pill warn">amarillo</span> valor 3 (o 2 en sueño/humor). Índice wellness = media de las 5 respuestas con estrés, dolor y fatiga invertidos (100% = perfecto).</p>
       ${missing.length ? `<p class="muted" style="font-size:12px">Sin cuenta todavía: ${missing.map(esc).join(", ")}</p>` : ""}</div>
