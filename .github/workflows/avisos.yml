@@ -1,7 +1,7 @@
 name: Avisos wellness y RPE
 on:
   schedule:
-    - cron: "*/10 * * * *"   # cada 10 minutos (GitHub puede retrasarlo unos minutos)
+    - cron: "*/10 5-23 * * *"   # cada 10 min, de 5 a 23 UTC (por la noche, parado: ver notify.mjs)
   workflow_dispatch:          # botón para lanzarlo a mano y probar
     inputs:
       mensaje:

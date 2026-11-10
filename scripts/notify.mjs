@@ -15,6 +15,9 @@ const nowMin = +parts.hour * 60 + +parts.minute;
 const dow = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(parts.weekday);
 const t2m = t => +t.slice(0, 2) * 60 + +t.slice(3, 5);
 
+// Parado por la noche (00:00–07:29 hora de Madrid), salvo si se lanza a mano
+if (nowMin < 7 * 60 + 30 && process.env.GITHUB_EVENT_NAME === "schedule") { console.log(`Madrid ${parts.hour}:${parts.minute} · horario nocturno, no se hace nada`); process.exit(0); }
+
 const DEFAULT_WEEKLY = [
     { id: "lun", type: "entreno", day: 1, start: "19:00", end: "20:30" },
     { id: "mar", type: "entreno", day: 2, start: "21:00", end: "22:30" },
