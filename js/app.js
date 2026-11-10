@@ -72,7 +72,7 @@
     if ("serviceWorker" in navigator && Store.mode === "firebase") navigator.serviceWorker.register("firebase-messaging-sw.js").catch(() => { });
     try { await Store.init(); } catch (e) { view.innerHTML = `<div class="card"><b>No se pudo conectar con Firebase.</b><p class="muted">${esc(e.message)}</p></div>`; return; }
     if (Store.mode === "demo") { $("#demoBar").classList.remove("hidden"); $("#demoReset").onclick = e => { e.preventDefault(); Store.resetDemo(); cache = null; toast("Datos demo regenerados"); Store.signOut(); }; }
-    $("#btnLogout").onclick = () => Store.signOut();
+    $("#btnLogout").onclick = () => { if (Store.mode === "demo" || confirm("¿Seguro que quieres cerrar sesión? No hace falta: la app te mantiene dentro aunque la cierres.")) Store.signOut(); };
     Store.onAuth(async u => {
       me = u; cache = null;
       $("#btnLogout").classList.toggle("hidden", !u);
@@ -111,17 +111,21 @@
     }
     let reg = false;
     const draw = () => {
-      view.innerHTML = `<div class="card"><h2>${reg ? "Crear cuenta" : "Entrar"}</h2>
+      let lastEmail = ""; try { lastEmail = localStorage.getItem("dhf-email") || ""; } catch (e) { }
+      view.innerHTML = `<form class="card" id="lForm" method="post" action="#" autocomplete="on"><h2>${reg ? "Crear cuenta" : "Entrar"}</h2>
         ${reg ? `<label class="f">¿Quién eres?</label><select id="lName"><option value="">Elige tu nombre…</option>${CFG.roster.map(n => `<option>${esc(n)}</option>`).join("")}<option value="__staff">Soy del cuerpo técnico</option></select><input id="lStaff" class="hidden" placeholder="Tu nombre" style="margin-top:8px">` : ""}
-        <label class="f">Email</label><input id="lEmail" type="email" autocomplete="email">
-        <label class="f">Contraseña</label><input id="lPw" type="password" autocomplete="${reg ? "new-password" : "current-password"}" placeholder="${reg ? "Mínimo 6 caracteres" : ""}">
-        <p><button class="full" id="lGo">${reg ? "Crear cuenta" : "Entrar"}</button></p>
-        <div class="row"><button class="link" id="lSwitch">${reg ? "Ya tengo cuenta" : "Crear cuenta nueva"}</button><span class="grow"></span>${reg ? "" : '<button class="link" id="lReset">He olvidado la contraseña</button>'}</div></div>`;
+        <label class="f" for="lEmail">Email</label><input id="lEmail" name="username" type="email" autocomplete="username" autocapitalize="none" inputmode="email" value="${esc(lastEmail)}">
+        <label class="f" for="lPw">Contraseña</label><input id="lPw" name="password" type="password" autocomplete="${reg ? "new-password" : "current-password"}" placeholder="${reg ? "Mínimo 6 caracteres" : ""}">
+        <p><button type="submit" class="full" id="lGo">${reg ? "Crear cuenta" : "Entrar"}</button></p>
+        <div class="row"><button type="button" class="link" id="lSwitch">${reg ? "Ya tengo cuenta" : "Crear cuenta nueva"}</button><span class="grow"></span>${reg ? "" : '<button type="button" class="link" id="lReset">He olvidado la contraseña</button>'}</div>
+        ${reg ? "" : '<p class="muted" style="font-size:12px;margin:10px 0 0">Consejo: cuando el móvil te ofrezca <b>guardar la contraseña</b>, acepta. La próxima vez se rellenará sola.</p>'}</form>`;
       if (reg) $("#lName").onchange = e => $("#lStaff").classList.toggle("hidden", e.target.value !== "__staff");
       $("#lSwitch").onclick = () => { reg = !reg; draw(); };
       if ($("#lReset")) $("#lReset").onclick = async () => { const em = $("#lEmail").value.trim(); if (!em) return toast("Escribe tu email primero"); try { await Store.resetPassword(em); toast("Te hemos enviado un email"); } catch (e) { toast(errMsg(e)); } };
-      $("#lGo").onclick = async () => {
+      $("#lForm").onsubmit = async ev => {
+        ev.preventDefault();
         const em = $("#lEmail").value.trim(), pw = $("#lPw").value;
+        try { localStorage.setItem("dhf-email", em); } catch (e) { }
         $("#lGo").disabled = true;
         try {
           if (reg) {
