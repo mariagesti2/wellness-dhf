@@ -22,6 +22,12 @@
     { t: "Muy dura", d: "Muy difícil mantener la intensidad. Apenas puedes decir unas palabras.", c: "#ea8a46" },
     { t: "Esfuerzo máximo", d: "Casi imposible seguir. Sin aliento, no puedes hablar.", c: "#e0533a" }
   ];
+  const WCH = [
+    { k: "sleepMin", n: "Horas de sueño", u: "h", min: 0, max: 10, f: x => Math.round(x / 6) / 10 },
+    { k: "sleepScore", n: "Puntuación sueño", u: "/100", min: 0, max: 100 },
+    { k: "hrv", n: "VFC (HRV)", u: "ms" },
+    { k: "hrRest", n: "FC basal", u: "lpm" }
+  ];
   const DAYS = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
   let me = null, schedule = null, tab = null, cache = null, selPlayer = null, weeks = 4, teamDate = U.today();
   let installEvt = null;
@@ -165,13 +171,32 @@
       ${METRICS.map(m => `<div class="slider"><div class="lbl"><label class="f">${m.n}</label></div>
         <div class="scale" data-k="${m.k}">${[0, 1, 2, 3, 4, 5].map(i => `<button data-v="${i}" class="${v[m.k] === i ? "on" : ""}">${i}</button>`).join("")}</div>
         <div class="ends"><span>Bajo</span><span>Alto</span></div></div>`).join("")}
+      <div class="watch-box"><h3>⌚ Datos del reloj <span class="muted" style="font-weight:400">(opcional)</span></h3>
+        <p class="muted" style="font-size:13px;margin:0 0 10px">Si llevas reloj o anillo (Apple Watch, Garmin, Whoop, Oura…), sube la captura de sueño/recuperación. Se lee en tu móvil (la imagen no se guarda) y puedes corregir cualquier valor.</p>
+        <label class="btn sec" style="width:100%">📷 Añadir captura(s)<input type="file" id="wImg" accept="image/*" multiple hidden></label>
+        <div id="wOcr" class="muted" style="font-size:13px;margin-top:6px"></div>
+        <div class="watch-grid">${Watch.FIELDS.map(f => { const val = v.watch && v.watch[f.k] != null ? (f.dur ? Watch.fmtDur(v.watch[f.k]) : v.watch[f.k]) : "";
+          return `<label><span>${f.n} <i>${f.dur ? "ej. 7h 30m" : f.u}</i></span><input data-wk="${f.k}" ${f.dur ? 'type="text" placeholder="—"' : 'type="number" step="any" inputmode="decimal" placeholder="—"'} value="${esc(val)}"></label>`; }).join("")}</div></div>
       <label class="f">Comentarios</label><textarea id="wCom" placeholder="Molestias, enfermedad, exámenes…">${esc(v.comments || "")}</textarea>
       <p><button class="full" id="wSave">Guardar</button></p><button class="full sec" id="wBack">Cancelar</button></div>`;
     view.querySelectorAll(".scale").forEach(sc => sc.querySelectorAll("button").forEach(b => b.onclick = () => { v[sc.dataset.k] = +b.dataset.v; sc.querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b)); }));
     $("#wBack").onclick = () => go("hoy");
+    $("#wImg").onchange = async e => {
+      const files = [...e.target.files]; if (!files.length) return;
+      const st = $("#wOcr"); st.textContent = "Cargando el lector… (la primera vez tarda unos segundos)";
+      try {
+        const r = await Watch.readImages(files, p => st.textContent = `Leyendo captura… ${Math.round(p * 100)}%`);
+        let n = 0;
+        Watch.FIELDS.forEach(f => { if (r[f.k] != null) { view.querySelector(`[data-wk="${f.k}"]`).value = f.dur ? Watch.fmtDur(r[f.k]) : r[f.k]; n++; } });
+        st.textContent = n ? `✓ ${n} datos leídos. Revísalos antes de guardar.` : "No he encontrado datos en la imagen. Puedes escribirlos a mano.";
+      } catch (err) { st.textContent = err.message + " · Puedes escribir los datos a mano."; }
+      e.target.value = "";
+    };
     $("#wSave").onclick = async () => {
       const miss = METRICS.filter(m => v[m.k] == null); if (miss.length) return toast("Falta: " + miss.map(m => m.s).join(", "));
       const e = { date: $("#wDate").value, comments: $("#wCom").value.trim() }; METRICS.forEach(m => e[m.k] = v[m.k]);
+      const wt = {}; Watch.FIELDS.forEach(f => { const raw = view.querySelector(`[data-wk="${f.k}"]`).value.trim(); if (!raw) return; const val = f.dur ? Watch.parseDur(raw) : +raw.replace(",", "."); if (val != null && isFinite(val)) wt[f.k] = val; });
+      e.watch = Object.keys(wt).length ? wt : null;
       $("#wSave").disabled = true;
       try { await Store.saveWellness(e); toast("Wellness guardado ✓"); go("hoy"); } catch (err) { toast("Error: " + err.message); $("#wSave").disabled = false; }
     };
@@ -255,6 +280,7 @@
         <div class="stat"><span>ACWR (agudo:crónico)</span><b>${ac.ratio ?? "—"}</b><small>${acwrPill(ac.ratio)} zona óptima 0,8–1,3</small></div>
       </div>
       <div class="card"><h3>Índice wellness diario (%) · línea discontinua = su media</h3><div id="chIdx"></div></div>
+      ${W.some(w => w.watch) ? `<div class="card"><h3>⌚ Datos del reloj</h3><div class="grid5">${WCH.map(c => `<div><b style="font-size:13px">${c.n}</b> <span class="muted" style="font-size:12px">${c.u}</span><div id="chW_${c.k}"></div></div>`).join("")}</div></div>` : ""}
       <div class="card"><h3>Las 5 preguntas (0–5)</h3><div class="grid5">${METRICS.map(m => `<div><b style="font-size:13px">${m.s}</b> <span class="muted" style="font-size:12px">${m.bad ? "más alto = peor" : "más alto = mejor"}</span><div id="chM_${m.k}"></div></div>`).join("")}</div></div>
       <div class="grid2">
         <div class="card"><h3>Carga diaria (RPE × min)</h3><div id="chLoad"></div></div>
@@ -264,6 +290,7 @@
       <div class="card"><h3>Bienestar psicológico en entreno/partido (1–5)</h3><div id="chPsy"></div></div>
       <div class="card"><h3>Comentarios y reflexiones</h3>${[...W.filter(w => w.comments), ...R.filter(r => r.comments || r.reflection)].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 15).map(c => `<div class="task"><div class="t"><b>${fmtDate(c.date)} · ${c.type ? "RPE " + TYPES[c.type].n + (c.psych ? " · bienestar psicológico " + c.psych + "/5" : "") : "Wellness"}</b>${c.reflection ? `<span>💭 ${esc(c.reflection)}</span>` : ""}${c.comments ? `<span>${esc(c.comments)}</span>` : ""}</div></div>`).join("") || '<p class="muted">Sin comentarios.</p>'}</div>`;
     Charts.line(box.querySelector("#chIdx"), { labels: days, yMin: 0, yMax: 100, height: 200, refLine: avg, series: [{ name: "Índice wellness", color: "#2a78d6", values: idx }] });
+    if (W.some(w => w.watch)) WCH.forEach(c => Charts.line(box.querySelector("#chW_" + c.k), { labels: days, yMin: c.min, yMax: c.max, height: 150, series: [{ name: c.n, color: "#1f3b63", values: days.map(d => { const x = byDate[d]?.watch?.[c.k]; return x == null ? null : c.f ? c.f(x) : x; }) }] }));
     METRICS.forEach(m => Charts.line(box.querySelector("#chM_" + m.k), { labels: days, yMin: 0, yMax: 5, yTicks: [0, 1, 2, 3, 4, 5], height: 150, series: [{ name: m.s, color: "#1f3b63", values: days.map(d => byDate[d] ? byDate[d][m.k] : null) }] }));
     const ser = o => Object.entries(TYPES).map(([k, t]) => ({ name: t.n, color: t.c, values: o[k] }));
     Charts.bars(box.querySelector("#chLoad"), { labels: days, height: 210, series: ser(loads) });
@@ -299,6 +326,12 @@
         charts: [
           { type: "line", title: `Índice wellness (%) · ${name}`, catCol: 0, series: [{ col: 6, name: "Índice wellness", color: "#2a78d6" }], yMin: 0, yMax: 100, from: { col: 9, row: 1 }, to: { col: 21, row: 19 } },
           { type: "line", title: "Las 5 preguntas (0-5)", catCol: 0, series: METRICS.map((m, i) => ({ col: i + 1, name: m.s, color: MC[i] })), yMin: 0, yMax: 5, from: { col: 9, row: 20 }, to: { col: 21, row: 40 } }] },
+      ...(Ws.some(w => w.watch) ? [{ name: "Reloj", cols: [{ header: "Fecha", width: 12 }, { header: "Sueño (h)", width: 10 }, { header: "Puntuación sueño", width: 14 }, { header: "Profundo (min)", width: 13 }, { header: "REM (min)", width: 10 }, { header: "Ligero (min)", width: 11 }, { header: "Despierto (min)", width: 14 }, { header: "FC basal (lpm)", width: 13 }, { header: "VFC (ms)", width: 9 }, { header: "Temp. desv. (°C)", width: 14 }, { header: "Frec. resp. (rpm)", width: 15 }],
+        rows: Ws.filter(w => w.watch).map(w => { const x = w.watch; return [w.date, x.sleepMin != null ? Math.round(x.sleepMin / 6) / 10 : null, x.sleepScore ?? null, x.deepMin ?? null, x.remMin ?? null, x.lightMin ?? null, x.awakeMin ?? null, x.hrRest ?? null, x.hrv ?? null, x.tempDev ?? null, x.resp ?? null]; }),
+        charts: [
+          { type: "bar", title: "Horas de sueño", catCol: 0, series: [{ col: 1, name: "Sueño (h)", color: "#2a78d6" }], from: { col: 12, row: 1 }, to: { col: 22, row: 17 } },
+          { type: "line", title: "VFC (ms)", catCol: 0, series: [{ col: 8, name: "VFC", color: "#1baf7a" }], from: { col: 12, row: 18 }, to: { col: 22, row: 34 } },
+          { type: "line", title: "FC basal (lpm)", catCol: 0, series: [{ col: 7, name: "FC basal", color: "#eb6834" }], from: { col: 12, row: 35 }, to: { col: 22, row: 51 } }] }] : []),
       { name: "RPE", cols: [{ header: "Fecha", width: 12 }, { header: "Tipo", width: 10 }, { header: "RPE (1-10)", width: 11 }, { header: "Minutos", width: 10 }, { header: "Carga (UA)", width: 11 }, { header: "Bienestar psicológico (1-5)", width: 14 }, { header: "Reflexión", width: 50 }, { header: "Comentarios", width: 40 }],
         rows: Rs.map(r => [r.date, TYPES[r.type].n, r.rpe, r.minutes, r.load, r.psych ?? null, r.reflection || "", r.comments || ""]),
         charts: [{ type: "line", title: "Bienestar psicológico (1-5)", catCol: 0, series: [{ col: 5, name: "Bienestar psicológico", color: "#2a78d6" }], yMin: 1, yMax: 5, from: { col: 9, row: 1 }, to: { col: 21, row: 19 } }] },
@@ -325,7 +358,7 @@
         charts: [{ type: "line", title: "Índice wellness (%)", catCol: 0, series: [{ col: 6, name: "Índice", color: "#2a78d6" }], yMin: 0, yMax: 100, from: { col: 11, row: 1 }, to: { col: 22, row: 18 } },
           { type: "bar", title: "Carga diaria (UA)", catCol: 0, series: [{ col: 7, name: "Carga", color: "#eb6834" }], from: { col: 11, row: 19 }, to: { col: 22, row: 36 } }] });
     });
-    sheets.push({ name: "Datos wellness", cols: ["Jugadora", "Fecha", ...METRICS.map(m => m.s), "Índice %", "Comentarios"].map(h => ({ header: h, width: h === "Jugadora" ? 26 : h === "Comentarios" ? 40 : 11 })), rows: [...W].sort((a, b) => a.name.localeCompare(b.name) || a.date.localeCompare(b.date)).map(w => [w.name, w.date, ...METRICS.map(m => w[m.k]), index(w), w.comments || ""]) });
+    sheets.push({ name: "Datos wellness", cols: ["Jugadora", "Fecha", ...METRICS.map(m => m.s), "Índice %", "Comentarios", "Sueño (h)", "Punt. sueño", "FC basal", "VFC (ms)"].map(h => ({ header: h, width: h === "Jugadora" ? 26 : h === "Comentarios" ? 40 : 11 })), rows: [...W].sort((a, b) => a.name.localeCompare(b.name) || a.date.localeCompare(b.date)).map(w => [w.name, w.date, ...METRICS.map(m => w[m.k]), index(w), w.comments || "", w.watch?.sleepMin != null ? Math.round(w.watch.sleepMin / 6) / 10 : null, w.watch?.sleepScore ?? null, w.watch?.hrRest ?? null, w.watch?.hrv ?? null]) });
     sheets.push({ name: "Datos RPE", cols: ["Jugadora", "Fecha", "Tipo", "RPE", "Minutos", "Carga", "Bienestar psicológico", "Reflexión", "Comentarios"].map(h => ({ header: h, width: h === "Jugadora" ? 26 : h === "Comentarios" || h === "Reflexión" ? 40 : 10 })), rows: [...R].sort((a, b) => a.name.localeCompare(b.name) || a.date.localeCompare(b.date)).map(r => [r.name, r.date, TYPES[r.type].n, r.rpe, r.minutes, r.load, r.psych ?? null, r.reflection || "", r.comments || ""]) });
     return { sheets };
   }
@@ -363,11 +396,12 @@
         <div class="stat"><span>RPE registrados</span><b>${rToday.length}</b><small>${sess.map(s => TYPES[s.type].n + " " + s.start).join(" · ") || "sin sesiones"}</small></div>
       </div>
       <div class="card tbl-wrap"><table>
-        <tr><th class="name">Jugadora</th><th>Índice</th>${METRICS.map(m => `<th>${m.s}</th>`).join("")}<th>Alertas</th><th>RPE del día</th><th>Carga 7d</th><th>ACWR</th>${Store.mode === "firebase" ? "<th>Avisos</th>" : ""}</tr>
+        <tr><th class="name">Jugadora</th><th>Índice</th>${METRICS.map(m => `<th>${m.s}</th>`).join("")}<th>Alertas</th><th>⌚ Sueño · VFC</th><th>RPE del día</th><th>Carga 7d</th><th>ACWR</th>${Store.mode === "firebase" ? "<th>Avisos</th>" : ""}</tr>
         ${players.map(p => { const w = wToday.find(x => x.uid === p.uid), rr = rToday.filter(x => x.uid === p.uid), a = acwr(R.filter(x => x.uid === p.uid), d), al = alertsOf(w);
           return `<tr><td class="name"><button data-p="${p.uid}">${esc(p.name)}</button>${w && w.comments ? ` <span title="${esc(w.comments)}">💬</span>` : ""}</td><td>${w ? idxPill(index(w)) : '<span class="muted">pendiente</span>'}</td>
             ${METRICS.map(m => w ? `<td class="cell ${level(m, w[m.k])}">${w[m.k]}</td>` : '<td class="na">—</td>').join("")}
             <td>${al.length ? `<span class="pill bad">▲ ${al.join(", ")}</span>` : w ? '<span class="pill ok">✓</span>' : ""}</td>
+            <td>${w && w.watch ? [w.watch.sleepMin != null ? Watch.fmtDur(w.watch.sleepMin) : "", w.watch.hrv != null ? w.watch.hrv + " ms" : ""].filter(Boolean).join(" · ") : '<span class="muted">—</span>'}</td>
             <td>${rr.map(x => `${TYPES[x.type].n} <b>${x.rpe}</b>×${x.minutes}${x.psych ? ` · <span class="pill ${x.psych <= 2 ? "bad" : x.psych === 3 ? "warn" : "ok"}" title="${esc(x.reflection || "")}">🧠 ${x.psych}</span>` : ""}`).join("<br>") || '<span class="muted">—</span>'}</td><td><b>${a.acute || ""}</b></td><td>${acwrPill(a.ratio)}</td>${Store.mode === "firebase" ? `<td>${p.hasPush ? "🔔" : '<span class="muted">no</span>'}</td>` : ""}</tr>`; }).join("")}
       </table>
       <p class="muted" style="font-size:12px;margin:10px 0 0">Colores: <span class="pill bad">rojo</span> estrés/dolor/fatiga ≥ 4 o sueño/humor ≤ 1 · <span class="pill warn">amarillo</span> valor 3 (o 2 en sueño/humor). Índice wellness = media de las 5 respuestas con estrés, dolor y fatiga invertidos (100% = perfecto).</p>

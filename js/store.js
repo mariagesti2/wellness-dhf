@@ -51,7 +51,7 @@
             id: p.uid + "_" + iso, uid: p.uid, name: p.name, date: iso,
             stress: clamp(base.stress + (rnd() - .5) * 2), sleep: clamp(base.sleep + (rnd() - .5) * 2),
             pain: clamp(base.pain + post + (rnd() - .5) * 2), fatigue: clamp(base.fatigue + post + (rnd() - .5) * 2),
-            mood: clamp(base.mood + (rnd() - .5) * 2), comments: rnd() < .05 ? "Molestia en el gemelo" : "", ts: Date.now()
+            mood: clamp(base.mood + (rnd() - .5) * 2), watch: pi % 2 ? null : (() => { const sl = 380 + Math.round(rnd() * 120); return { sleepMin: sl, sleepScore: 60 + Math.round(rnd() * 35), deepMin: Math.round(sl * .15), remMin: Math.round(sl * .22), lightMin: Math.round(sl * .58), awakeMin: 10 + Math.round(rnd() * 25), hrRest: 42 + Math.round(rnd() * 14), hrv: 60 + Math.round(rnd() * 70), tempDev: Math.round((rnd() - .5) * 6) / 10, resp: 13 + Math.round(rnd() * 30) / 10 }; })(), comments: rnd() < .05 ? "Molestia en el gemelo" : "", ts: Date.now()
           };
           sessionsOn(schedule, iso).forEach(se => {
             if (d === 0 || rnd() < 0.07) return;
