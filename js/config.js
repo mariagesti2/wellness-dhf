@@ -10,16 +10,16 @@ self.APP_CONFIG = {
   //    (Consola Firebase → Configuración del proyecto → Tus apps → SDK config)
   //    Si lo dejas vacío, la app arranca en MODO DEMO con datos inventados.
   firebase: {
-    apiKey: "",
-    authDomain: "",
-    projectId: "",
-    storageBucket: "",
-    messagingSenderId: "",
-    appId: ""
+    apiKey: "AIzaSyC6BYnTaNNLkgnAZk9zJyMloLdTxCJ3NEc",
+    authDomain: "wellness-dhf.firebaseapp.com",
+    projectId: "wellness-dhf",
+    storageBucket: "wellness-dhf.firebasestorage.app",
+    messagingSenderId: "477123362386",
+    appId: "1:477123362386:web:b8bc46ce52b7740282e98b"
   },
 
   // 2) Clave pública VAPID (Cloud Messaging → Certificados push web)
-  vapidKey: "",
+  vapidKey: "BJLMD8dR5F-nQlTxQdMpcaoR5NqviQTrbLziYowPehp-sds_x9zC3-FFy9M_lXhZmpXZn-iOv-n5y4SHCqgLw-g",
 
   // 3) Plantilla: las jugadoras eligen su nombre al registrarse
   roster: [
