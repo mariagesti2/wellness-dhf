@@ -57,7 +57,7 @@
             if (d === 0 || rnd() < 0.07) return;
             const r = se.type === "partido" ? 7 + Math.round(rnd() * 2) : se.type === "entreno" ? 5 + Math.round(rnd() * 3) : 4 + Math.round(rnd() * 3);
             const m = se.type === "partido" ? 50 + Math.round(rnd() * 25) : minutesBetween(se.start, se.end);
-            rpe[p.uid + "_" + iso + "_" + se.type] = { id: p.uid + "_" + iso + "_" + se.type, uid: p.uid, name: p.name, date: iso, type: se.type, rpe: r, minutes: m, load: r * m, comments: "", ts: Date.now() };
+            rpe[p.uid + "_" + iso + "_" + se.type] = { id: p.uid + "_" + iso + "_" + se.type, uid: p.uid, name: p.name, date: iso, type: se.type, rpe: r, minutes: m, load: r * m, psych: se.type === "gym" ? null : 2 + Math.round(rnd() * 3), reflection: "", comments: "", ts: Date.now() };
           });
         }
       });

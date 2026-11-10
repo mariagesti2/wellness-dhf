@@ -187,7 +187,8 @@
     if (ses && ses.type !== type) ses = null;
     const slot = ses ? ses.id : type;
     const existing = R.find(r => ses ? slotMatch(r, ses) : (r.slot || r.type) === slot);
-    let st = { type, rpe: existing?.rpe || null, minutes: existing?.minutes || null };
+    let st = { type, rpe: existing?.rpe || null, minutes: existing?.minutes || null, psych: existing?.psych || null, refl: existing?.reflection || "" };
+    const askPsych = () => st.type !== "gym";
     const defMin = t => { const s = ses || sess.find(x => x.type === t); return s ? U.minutesBetween(s.start, s.end) : (t === "partido" ? 60 : t === "gym" ? 60 : 90); };
     if (!st.minutes) st.minutes = defMin(type);
     $("#tabs").classList.add("hidden");
@@ -200,10 +201,19 @@
         <div class="rpe-desc">${st.rpe ? `<b>${st.rpe} · ${RPE[st.rpe].t}.</b> ${RPE[st.rpe].d}` : '<span class="muted">Toca un número para ver la descripción.</span>'}</div>
         <label class="f">Duración (minutos)</label><input type="number" id="rMin" inputmode="numeric" min="1" max="300" value="${st.minutes}">
         <div class="load-box"><span>Carga de la sesión (RPE × minutos)</span><b id="rLoad">${st.rpe ? st.rpe * st.minutes : "—"}</b></div>
+        ${askPsych() ? `<div style="margin-top:22px;padding-top:6px;border-top:1px solid var(--line)"><h3 style="margin-top:14px">Bienestar psicológico durante el entrenamiento/partido</h3>
+          <label class="f">¿Qué puntuación le darías a tu bienestar psicológico en el entrenamiento/partido de hoy?</label>
+          <p class="muted" style="font-size:12px;margin:0 0 8px">Ten en cuenta: GESTIÓN DE LAS EMOCIONES (control de la impulsividad: evitar quejarse, golpear, movimientos con los brazos por inconformidad, quejarse por arbitraje, etc.) · CONCENTRACIÓN EN EL TRABAJO (atender explicaciones y directrices de compañeras, sin distraerte con pensamientos o emociones que te perjudican) · BAJO NIVEL DE ERROR (acierto elevado en las ejecuciones y tolerancia al error: el error no te paraliza ni te distrae) · COMUNICACIÓN EFECTIVA (buena comunicación verbal y no verbal con compañeras y staff) · MOTIVACIÓN, ACTITUD POSITIVA Y COMPAÑERISMO (satisfacción con el trabajo, te superas respecto al entreno anterior, animas a tus compañeras y no hablas mal de ellas, etc.)</p>
+          <div class="scale" id="psy" style="grid-template-columns:repeat(5,1fr)">${[1, 2, 3, 4, 5].map(i => `<button data-v="${i}" class="${st.psych === i ? "on" : ""}">${i}</button>`).join("")}</div>
+          <div class="ends" style="display:flex;justify-content:space-between;font-size:12px;color:var(--muted)"><span>Bajo</span><span>Alto</span></div>
+          <label class="f">Reflexión sobre tu bienestar en el entrenamiento/partido de hoy: ¿qué aspectos te han hecho sentir bien? ¿Qué crees que deberías mejorar? ¿Tu día fuera del deporte te ha perjudicado en el entrenamiento? <span id="reflReq" style="color:var(--critical);font-weight:600">${st.psych && st.psych <= 3 ? "(obligatoria)" : ""}</span></label>
+          <textarea id="rRefl" placeholder="Obligatoria si la puntuación es 3 o menos">${esc(st.refl)}</textarea></div>` : ""}
         <label class="f">Comentarios</label><textarea id="rCom">${esc(existing?.comments || "")}</textarea>
         <p><button class="full" id="rSave">Guardar</button></p>${existing ? '<p><button class="full danger" id="rDel">Borrar este registro</button></p>' : ""}<button class="full sec" id="rBack">Cancelar</button></div>`;
       view.querySelectorAll(".types button").forEach(b => b.onclick = () => showRpe(b.dataset.t, $("#rDate").value));
       view.querySelectorAll(".rpe-grid button").forEach(b => b.onclick = () => { st.rpe = +b.dataset.v; st.minutes = +$("#rMin").value || st.minutes; draw(); });
+      if ($("#psy")) $("#psy").querySelectorAll("button").forEach(b => b.onclick = () => { st.psych = +b.dataset.v; $("#psy").querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b)); $("#reflReq").textContent = st.psych <= 3 ? "(obligatoria)" : ""; });
+      if ($("#rRefl")) $("#rRefl").oninput = e => st.refl = e.target.value;
       $("#rMin").oninput = e => { st.minutes = +e.target.value; $("#rLoad").textContent = st.rpe && st.minutes ? st.rpe * st.minutes : "—"; };
       $("#rDate").onchange = e => showRpe(st.type, e.target.value);
       $("#rBack").onclick = () => go("hoy");
@@ -211,8 +221,11 @@
       $("#rSave").onclick = async () => {
         const min = +$("#rMin").value;
         if (!st.rpe) return toast("Elige el RPE (1–10)"); if (!(min > 0)) return toast("Indica los minutos");
+        const refl = $("#rRefl") ? $("#rRefl").value.trim() : "";
+        if (askPsych() && !st.psych) return toast("Puntúa tu bienestar psicológico (1–5)");
+        if (askPsych() && st.psych <= 3 && refl.length < 3) return toast("Con 3 o menos, escribe la reflexión");
         $("#rSave").disabled = true;
-        try { await Store.saveRpe({ date: $("#rDate").value, type: st.type, slot, rpe: st.rpe, minutes: min, load: st.rpe * min, comments: $("#rCom").value.trim() }); toast("RPE guardado ✓"); go("hoy"); }
+        try { await Store.saveRpe({ date: $("#rDate").value, type: st.type, slot, rpe: st.rpe, minutes: min, load: st.rpe * min, psych: askPsych() ? st.psych : null, reflection: askPsych() ? refl : "", comments: $("#rCom").value.trim() }); toast("RPE guardado ✓"); go("hoy"); }
         catch (err) { toast("Error: " + err.message); $("#rSave").disabled = false; }
       };
     };
@@ -248,12 +261,15 @@
         <div class="card"><h3>Carga semanal · últimas 12 semanas</h3><div id="chWk"></div></div>
       </div>
       <div class="card"><h3>ACWR semanal · zona óptima 0,8–1,3 (línea en 1)</h3><div id="chAcwr"></div></div>
-      <div class="card"><h3>Comentarios</h3>${[...W.filter(w => w.comments), ...R.filter(r => r.comments)].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 12).map(c => `<div class="task"><div class="t"><b>${fmtDate(c.date)} · ${c.type ? "RPE " + TYPES[c.type].n : "Wellness"}</b><span>${esc(c.comments)}</span></div></div>`).join("") || '<p class="muted">Sin comentarios.</p>'}</div>`;
+      <div class="card"><h3>Bienestar psicológico en entreno/partido (1–5)</h3><div id="chPsy"></div></div>
+      <div class="card"><h3>Comentarios y reflexiones</h3>${[...W.filter(w => w.comments), ...R.filter(r => r.comments || r.reflection)].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 15).map(c => `<div class="task"><div class="t"><b>${fmtDate(c.date)} · ${c.type ? "RPE " + TYPES[c.type].n + (c.psych ? " · bienestar psicológico " + c.psych + "/5" : "") : "Wellness"}</b>${c.reflection ? `<span>💭 ${esc(c.reflection)}</span>` : ""}${c.comments ? `<span>${esc(c.comments)}</span>` : ""}</div></div>`).join("") || '<p class="muted">Sin comentarios.</p>'}</div>`;
     Charts.line(box.querySelector("#chIdx"), { labels: days, yMin: 0, yMax: 100, height: 200, refLine: avg, series: [{ name: "Índice wellness", color: "#2a78d6", values: idx }] });
     METRICS.forEach(m => Charts.line(box.querySelector("#chM_" + m.k), { labels: days, yMin: 0, yMax: 5, yTicks: [0, 1, 2, 3, 4, 5], height: 150, series: [{ name: m.s, color: "#1f3b63", values: days.map(d => byDate[d] ? byDate[d][m.k] : null) }] }));
     const ser = o => Object.entries(TYPES).map(([k, t]) => ({ name: t.n, color: t.c, values: o[k] }));
     Charts.bars(box.querySelector("#chLoad"), { labels: days, height: 210, series: ser(loads) });
     Charts.bars(box.querySelector("#chWk"), { labels: wkStarts, height: 210, series: ser(wk) });
+    const psyDay = days.map(d => { const v = R.filter(r => r.date === d && r.psych).map(r => r.psych); return v.length ? Math.round(v.reduce((a, b) => a + b, 0) / v.length * 10) / 10 : null; });
+    Charts.line(box.querySelector("#chPsy"), { labels: days, yMin: 1, yMax: 5, yTicks: [1, 2, 3, 4, 5], refLine: 3, height: 170, series: [{ name: "Bienestar psicológico", color: "#2a78d6", values: psyDay }] });
     Charts.line(box.querySelector("#chAcwr"), { labels: wkStarts, yMin: 0, yMax: 2, yTicks: [0, .5, .8, 1, 1.3, 1.5, 2], refLine: 1, height: 180, series: [{ name: "ACWR", color: "#2a78d6", values: wkAcwr }] });
     box.querySelectorAll("#segW button").forEach(b => b.onclick = () => { weeks = +b.dataset.n; evolution(box, name, W, R, onExcel); });
     box.querySelector("#bXls").onclick = onExcel;
@@ -283,8 +299,9 @@
         charts: [
           { type: "line", title: `Índice wellness (%) · ${name}`, catCol: 0, series: [{ col: 6, name: "Índice wellness", color: "#2a78d6" }], yMin: 0, yMax: 100, from: { col: 9, row: 1 }, to: { col: 21, row: 19 } },
           { type: "line", title: "Las 5 preguntas (0-5)", catCol: 0, series: METRICS.map((m, i) => ({ col: i + 1, name: m.s, color: MC[i] })), yMin: 0, yMax: 5, from: { col: 9, row: 20 }, to: { col: 21, row: 40 } }] },
-      { name: "RPE", cols: [{ header: "Fecha", width: 12 }, { header: "Tipo", width: 10 }, { header: "RPE (1-10)", width: 11 }, { header: "Minutos", width: 10 }, { header: "Carga (UA)", width: 11 }, { header: "Comentarios", width: 40 }],
-        rows: Rs.map(r => [r.date, TYPES[r.type].n, r.rpe, r.minutes, r.load, r.comments || ""]) },
+      { name: "RPE", cols: [{ header: "Fecha", width: 12 }, { header: "Tipo", width: 10 }, { header: "RPE (1-10)", width: 11 }, { header: "Minutos", width: 10 }, { header: "Carga (UA)", width: 11 }, { header: "Bienestar psicológico (1-5)", width: 14 }, { header: "Reflexión", width: 50 }, { header: "Comentarios", width: 40 }],
+        rows: Rs.map(r => [r.date, TYPES[r.type].n, r.rpe, r.minutes, r.load, r.psych ?? null, r.reflection || "", r.comments || ""]),
+        charts: [{ type: "line", title: "Bienestar psicológico (1-5)", catCol: 0, series: [{ col: 5, name: "Bienestar psicológico", color: "#2a78d6" }], yMin: 1, yMax: 5, from: { col: 9, row: 1 }, to: { col: 21, row: 19 } }] },
       { name: "Carga diaria", cols: [{ header: "Fecha", width: 12 }, { header: "Gym", width: 9 }, { header: "Entreno", width: 9 }, { header: "Partido", width: 9 }, { header: "Total", width: 9 }], rows: daily,
         charts: [{ type: "bar", stacked: true, title: "Carga diaria (RPE × min)", catCol: 0, series: [{ col: 1, name: "Gym", color: TYPES.gym.c }, { col: 2, name: "Entreno", color: TYPES.entreno.c }, { col: 3, name: "Partido", color: TYPES.partido.c }], from: { col: 6, row: 1 }, to: { col: 20, row: 22 } }] },
       { name: "Semanal", cols: [{ header: "Semana (lunes)", width: 14 }, { header: "Gym", width: 9 }, { header: "Entreno", width: 9 }, { header: "Partido", width: 9 }, { header: "Carga total", width: 11 }, { header: "ACWR", width: 8 }, { header: "Wellness medio %", width: 16 }], rows: weekly,
@@ -309,7 +326,7 @@
           { type: "bar", title: "Carga diaria (UA)", catCol: 0, series: [{ col: 7, name: "Carga", color: "#eb6834" }], from: { col: 11, row: 19 }, to: { col: 22, row: 36 } }] });
     });
     sheets.push({ name: "Datos wellness", cols: ["Jugadora", "Fecha", ...METRICS.map(m => m.s), "Índice %", "Comentarios"].map(h => ({ header: h, width: h === "Jugadora" ? 26 : h === "Comentarios" ? 40 : 11 })), rows: [...W].sort((a, b) => a.name.localeCompare(b.name) || a.date.localeCompare(b.date)).map(w => [w.name, w.date, ...METRICS.map(m => w[m.k]), index(w), w.comments || ""]) });
-    sheets.push({ name: "Datos RPE", cols: ["Jugadora", "Fecha", "Tipo", "RPE", "Minutos", "Carga", "Comentarios"].map(h => ({ header: h, width: h === "Jugadora" ? 26 : h === "Comentarios" ? 40 : 10 })), rows: [...R].sort((a, b) => a.name.localeCompare(b.name) || a.date.localeCompare(b.date)).map(r => [r.name, r.date, TYPES[r.type].n, r.rpe, r.minutes, r.load, r.comments || ""]) });
+    sheets.push({ name: "Datos RPE", cols: ["Jugadora", "Fecha", "Tipo", "RPE", "Minutos", "Carga", "Bienestar psicológico", "Reflexión", "Comentarios"].map(h => ({ header: h, width: h === "Jugadora" ? 26 : h === "Comentarios" || h === "Reflexión" ? 40 : 10 })), rows: [...R].sort((a, b) => a.name.localeCompare(b.name) || a.date.localeCompare(b.date)).map(r => [r.name, r.date, TYPES[r.type].n, r.rpe, r.minutes, r.load, r.psych ?? null, r.reflection || "", r.comments || ""]) });
     return { sheets };
   }
 
@@ -351,12 +368,12 @@
           return `<tr><td class="name"><button data-p="${p.uid}">${esc(p.name)}</button>${w && w.comments ? ` <span title="${esc(w.comments)}">💬</span>` : ""}</td><td>${w ? idxPill(index(w)) : '<span class="muted">pendiente</span>'}</td>
             ${METRICS.map(m => w ? `<td class="cell ${level(m, w[m.k])}">${w[m.k]}</td>` : '<td class="na">—</td>').join("")}
             <td>${al.length ? `<span class="pill bad">▲ ${al.join(", ")}</span>` : w ? '<span class="pill ok">✓</span>' : ""}</td>
-            <td>${rr.map(x => `${TYPES[x.type].n} <b>${x.rpe}</b>×${x.minutes}`).join("<br>") || '<span class="muted">—</span>'}</td><td><b>${a.acute || ""}</b></td><td>${acwrPill(a.ratio)}</td>${Store.mode === "firebase" ? `<td>${p.hasPush ? "🔔" : '<span class="muted">no</span>'}</td>` : ""}</tr>`; }).join("")}
+            <td>${rr.map(x => `${TYPES[x.type].n} <b>${x.rpe}</b>×${x.minutes}${x.psych ? ` · <span class="pill ${x.psych <= 2 ? "bad" : x.psych === 3 ? "warn" : "ok"}" title="${esc(x.reflection || "")}">🧠 ${x.psych}</span>` : ""}`).join("<br>") || '<span class="muted">—</span>'}</td><td><b>${a.acute || ""}</b></td><td>${acwrPill(a.ratio)}</td>${Store.mode === "firebase" ? `<td>${p.hasPush ? "🔔" : '<span class="muted">no</span>'}</td>` : ""}</tr>`; }).join("")}
       </table>
       <p class="muted" style="font-size:12px;margin:10px 0 0">Colores: <span class="pill bad">rojo</span> estrés/dolor/fatiga ≥ 4 o sueño/humor ≤ 1 · <span class="pill warn">amarillo</span> valor 3 (o 2 en sueño/humor). Índice wellness = media de las 5 respuestas con estrés, dolor y fatiga invertidos (100% = perfecto).</p>
       ${missing.length ? `<p class="muted" style="font-size:12px">Sin cuenta todavía: ${missing.map(esc).join(", ")}</p>` : ""}</div>
       <div class="card"><h3>Media del equipo · índice wellness y carga, últimas 4 semanas</h3><div id="chTeamIdx"></div><div id="chTeamLoad" style="margin-top:12px"></div></div>
-      <div class="card"><h3>Comentarios del día</h3>${[...wToday, ...rToday].filter(x => x.comments).map(x => `<div class="task"><div class="t"><b>${esc(x.name)} · ${x.type ? "RPE " + TYPES[x.type].n : "Wellness"}</b><span>${esc(x.comments)}</span></div></div>`).join("") || '<p class="muted">Ninguno.</p>'}</div>`;
+      <div class="card"><h3>Comentarios y reflexiones del día</h3>${[...wToday, ...rToday].filter(x => x.comments || x.reflection).map(x => `<div class="task"><div class="t"><b>${esc(x.name)} · ${x.type ? "RPE " + TYPES[x.type].n + (x.psych ? " · bienestar psicológico " + x.psych + "/5" : "") : "Wellness"}</b>${x.reflection ? `<span>💭 ${esc(x.reflection)}</span>` : ""}${x.comments ? `<span>${esc(x.comments)}</span>` : ""}</div></div>`).join("") || '<p class="muted">Ninguno.</p>'}</div>`;
     const days = dateRange(U.addDays(d, -27), d);
     Charts.line($("#chTeamIdx"), { labels: days, yMin: 0, yMax: 100, height: 180, series: [{ name: "Índice medio equipo", color: "#2a78d6", values: days.map(x => { const ws = W.filter(w => w.date === x); return ws.length ? Math.round(ws.reduce((s, w) => s + index(w), 0) / ws.length) : null; }) }] });
     const L = loadsByDay(R, days), np = Math.max(1, players.length);
