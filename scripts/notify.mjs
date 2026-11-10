@@ -5,7 +5,7 @@ import admin from "firebase-admin";
 const SITE_URL = process.env.SITE_URL || "./index.html";
 admin.initializeApp({ credential: admin.credential.cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT)) });
 const db = admin.firestore();
-const TYPES = { gym: "Gym", entreno: "Entreno", partido: "Partido" };
+const TYPES = { gym: "Gym", entreno: "Entreno", partido: "Partido", car: "CAR Sub21" };
 
 // Fecha y hora en Madrid
 const parts = Object.fromEntries(new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Madrid", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23", weekday: "short" })

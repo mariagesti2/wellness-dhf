@@ -8,7 +8,8 @@
     { k: "fatigue", n: "Nivel de fatiga", s: "Fatiga", bad: true },
     { k: "mood", n: "Mood / Humor de hoy", s: "Humor", bad: false }
   ];
-  const TYPES = { gym: { n: "Gym", c: "#2a78d6" }, entreno: { n: "Entreno", c: "#eb6834" }, partido: { n: "Partido", c: "#1baf7a" } };
+  const TYPES = { gym: { n: "Gym", c: "#2a78d6" }, entreno: { n: "Entreno", c: "#eb6834" }, partido: { n: "Partido", c: "#1baf7a" }, car: { n: "CAR Sub21", c: "#eda100" } };
+  const TK = Object.keys(TYPES), TN = TK.length;
   const RPE = [
     null,
     { t: "Muy ligera", d: "Casi sin esfuerzo, poco más que estar sentada.", c: "#6a93f5" },
@@ -336,10 +337,10 @@
     const Ws = [...W].sort((a, b) => a.date.localeCompare(b.date)), Rs = [...R].sort((a, b) => a.date.localeCompare(b.date) || a.type.localeCompare(b.type));
     const first = [Ws[0]?.date, Rs[0]?.date].filter(Boolean).sort()[0] || U.today();
     const days = dateRange(first, U.today()), L = loadsByDay(R, days);
-    const daily = days.map((d, i) => [d, L.gym[i] || null, L.entreno[i] || null, L.partido[i] || null, (L.gym[i] + L.entreno[i] + L.partido[i]) || null]).filter(r => r[4]);
+    const daily = days.map((d, i) => [d, ...TK.map(k => L[k][i] || null), TK.reduce((a, k) => a + L[k][i], 0) || null]).filter(r => r[TN + 1]);
     const wks = []; for (let d = weekStart(first); d <= U.today(); d = U.addDays(d, 7)) wks.push(d);
     const weekly = wks.map(ws => { const we = U.addDays(ws, 6), rr = R.filter(r => r.date >= ws && r.date <= we), s = t => rr.filter(r => r.type === t).reduce((a, r) => a + r.load, 0);
-      const wl = Ws.filter(w => w.date >= ws && w.date <= we).map(index); return [ws, s("gym"), s("entreno"), s("partido"), s("gym") + s("entreno") + s("partido"), acwr(R, we > U.today() ? U.today() : we).ratio, wl.length ? Math.round(wl.reduce((a, b) => a + b, 0) / wl.length) : null]; });
+      const wl = Ws.filter(w => w.date >= ws && w.date <= we).map(index); return [ws, ...TK.map(s), TK.reduce((a, k) => a + s(k), 0), acwr(R, we > U.today() ? U.today() : we).ratio, wl.length ? Math.round(wl.reduce((a, b) => a + b, 0) / wl.length) : null]; });
     const MC = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4"];
     return { sheets: [
       { name: "Wellness", cols: [{ header: "Fecha", width: 12 }, ...METRICS.map(m => ({ header: m.s + " (0-5)", width: 12 })), { header: "Índice wellness %", width: 16 }, { header: "Comentarios", width: 40 }],
@@ -357,13 +358,13 @@
         rows: Rs.map(r => [r.date, TYPES[r.type].n, r.rpe, r.minutes, r.load, r.psych ?? null, r.reflection || "", r.comments || "", ...Watch.WORKOUT_FIELDS.map(f => r.watch?.[f.k] ?? null)]),
         charts: [{ type: "line", title: "Bienestar psicológico (1-5)", catCol: 0, series: [{ col: 5, name: "Bienestar psicológico", color: "#2a78d6" }], yMin: 1, yMax: 5, from: { col: 21, row: 1 }, to: { col: 32, row: 19 } },
           ...(Rs.some(r => r.watch?.hrAvg) ? [{ type: "line", title: "FC media por sesión (lpm)", catCol: 0, series: [{ col: 10, name: "FC media", color: "#eb6834" }], from: { col: 21, row: 20 }, to: { col: 32, row: 38 } }] : [])] },
-      { name: "Carga diaria", cols: [{ header: "Fecha", width: 12 }, { header: "Gym", width: 9 }, { header: "Entreno", width: 9 }, { header: "Partido", width: 9 }, { header: "Total", width: 9 }], rows: daily,
-        charts: [{ type: "bar", stacked: true, title: "Carga diaria (RPE × min)", catCol: 0, series: [{ col: 1, name: "Gym", color: TYPES.gym.c }, { col: 2, name: "Entreno", color: TYPES.entreno.c }, { col: 3, name: "Partido", color: TYPES.partido.c }], from: { col: 6, row: 1 }, to: { col: 20, row: 22 } }] },
-      { name: "Semanal", cols: [{ header: "Semana (lunes)", width: 14 }, { header: "Gym", width: 9 }, { header: "Entreno", width: 9 }, { header: "Partido", width: 9 }, { header: "Carga total", width: 11 }, { header: "ACWR", width: 8 }, { header: "Wellness medio %", width: 16 }], rows: weekly,
+      { name: "Carga diaria", cols: [{ header: "Fecha", width: 12 }, ...TK.map(k => ({ header: TYPES[k].n, width: 10 })), { header: "Total", width: 9 }], rows: daily,
+        charts: [{ type: "bar", stacked: true, title: "Carga diaria (RPE × min)", catCol: 0, series: TK.map((k, i) => ({ col: i + 1, name: TYPES[k].n, color: TYPES[k].c })), from: { col: TN + 3, row: 1 }, to: { col: TN + 17, row: 22 } }] },
+      { name: "Semanal", cols: [{ header: "Semana (lunes)", width: 14 }, ...TK.map(k => ({ header: TYPES[k].n, width: 10 })), { header: "Carga total", width: 11 }, { header: "ACWR", width: 8 }, { header: "Wellness medio %", width: 16 }], rows: weekly,
         charts: [
-          { type: "bar", stacked: true, title: "Carga semanal", catCol: 0, series: [{ col: 1, name: "Gym", color: TYPES.gym.c }, { col: 2, name: "Entreno", color: TYPES.entreno.c }, { col: 3, name: "Partido", color: TYPES.partido.c }], from: { col: 8, row: 1 }, to: { col: 20, row: 19 } },
-          { type: "line", title: "ACWR (zona óptima 0,8-1,3)", catCol: 0, series: [{ col: 5, name: "ACWR", color: "#2a78d6" }], yMin: 0, yMax: 2, from: { col: 8, row: 20 }, to: { col: 20, row: 36 } },
-          { type: "line", title: "Wellness medio semanal (%)", catCol: 0, series: [{ col: 6, name: "Wellness medio", color: "#1f3b63" }], yMin: 0, yMax: 100, from: { col: 8, row: 37 }, to: { col: 20, row: 53 } }] }
+          { type: "bar", stacked: true, title: "Carga semanal", catCol: 0, series: TK.map((k, i) => ({ col: i + 1, name: TYPES[k].n, color: TYPES[k].c })), from: { col: TN + 5, row: 1 }, to: { col: TN + 17, row: 19 } },
+          { type: "line", title: "ACWR (zona óptima 0,8-1,3)", catCol: 0, series: [{ col: TN + 2, name: "ACWR", color: "#2a78d6" }], yMin: 0, yMax: 2, from: { col: TN + 5, row: 20 }, to: { col: TN + 17, row: 36 } },
+          { type: "line", title: "Wellness medio semanal (%)", catCol: 0, series: [{ col: TN + 3, name: "Wellness medio", color: "#1f3b63" }], yMin: 0, yMax: 100, from: { col: TN + 5, row: 37 }, to: { col: TN + 17, row: 53 } }] }
     ] };
   }
   function teamBook(players, W, R) {

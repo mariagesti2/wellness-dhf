@@ -12,7 +12,7 @@
 const PROJECT = "wellness-dhf";
 const SITE_URL = "https://mariagesti2.github.io/wellness-dhf/index.html";
 const TZ = "Europe/Madrid";
-const TYPES = { gym: "Gym", entreno: "Entreno", partido: "Partido" };
+const TYPES = { gym: "Gym", entreno: "Entreno", partido: "Partido", car: "CAR Sub21" };
 const DEFAULT_WEEKLY = [
   { id: "lun", type: "entreno", day: 1, start: "19:00", end: "20:30" },
   { id: "mar", type: "entreno", day: 2, start: "21:00", end: "22:30" },

@@ -50,7 +50,8 @@ textarea { min-height: 70px; resize: vertical; } label.f { display: block; font-
 .scale button.on { background: var(--navy); color: #fff; }
 
 /* RPE */
-.types { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.types { display: grid; grid-template-columns: repeat(auto-fit, minmax(72px, 1fr)); gap: 8px; }
+.types button { padding: 11px 6px; }
 .types button { background: #eef1f5; color: var(--ink); } .types button.on { background: var(--navy); color: #fff; }
 .rpe-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
 .rpe-grid button { padding: 14px 0; font-size: 18px; color: #0b0b0b; border: 3px solid transparent; }
