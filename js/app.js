@@ -54,6 +54,7 @@
     return { acute, chronic: Math.round(chronic), ratio: enough && chronic > 0 ? Math.round(acute / chronic * 100) / 100 : null };
   }
   const acwrPill = r => r == null ? '<span class="pill">—</span>' : r > 1.5 ? `<span class="pill bad">▲ ${r}</span>` : r < 0.8 ? `<span class="pill warn">▼ ${r}</span>` : r > 1.3 ? `<span class="pill warn">! ${r}</span>` : `<span class="pill ok">✓ ${r}</span>`;
+  const slotMatch = (r, s) => r.slot ? r.slot === s.id : r.type === s.type;
   const t2m = t => +t.slice(0, 2) * 60 + +t.slice(3, 5);
   const nowMin = () => { const d = new Date(); return d.getHours() * 60 + d.getMinutes(); };
 
@@ -73,7 +74,7 @@
       schedule = await Store.getSchedule();
       const q = new URLSearchParams(location.search);
       if (!u.isCoach && q.get("f") === "wellness") { history.replaceState(null, "", location.pathname); return showWellness(); }
-      if (!u.isCoach && q.get("f") === "rpe") { history.replaceState(null, "", location.pathname); return showRpe(q.get("type"), q.get("date")); }
+      if (!u.isCoach && q.get("f") === "rpe") { history.replaceState(null, "", location.pathname); return showRpe(q.get("type"), q.get("date"), q.get("s")); }
       go(u.isCoach ? "equipo" : "hoy");
     });
   }
@@ -140,8 +141,8 @@
     if (!pushOk) html += `<div class="alert">🔔 <div><b>Activa los avisos</b> para que te llegue el wellness a las ${schedule.wellnessTime} y el RPE al acabar cada sesión.<br><button id="bPush" style="margin-top:8px">Activar notificaciones</button></div></div>`;
     html += `<div class="card"><h2>${fmtDate(d)}</h2>
       <div class="task"><div class="t"><b>Wellness</b><span>${w ? "Hecho · índice " + index(w) + "%" : "Pendiente · cuestionario de 5 preguntas"}</span></div>${w ? `${idxPill(index(w))}<button class="sec" data-w>Editar</button>` : "<button data-w>Rellenar</button>"}</div>
-      ${sess.map(s => { const r = done.find(x => x.type === s.type); const ended = nowMin() >= t2m(s.end);
-        return `<div class="task"><div class="t"><b>RPE ${TYPES[s.type].n}${s.label ? " · " + esc(s.label) : ""}</b><span>${s.start}–${s.end}${r ? ` · RPE ${r.rpe} × ${r.minutes} min = <b>${r.load}</b> UA` : ended ? " · Pendiente" : " · Disponible al acabar"}</span></div>${r ? `<button class="sec" data-r="${s.type}">Editar</button>` : `<button data-r="${s.type}" ${ended ? "" : 'class="sec"'}>Registrar</button>`}</div>`; }).join("")}
+      ${sess.map(s => { const r = done.find(x => slotMatch(x, s)); const ended = nowMin() >= t2m(s.end);
+        return `<div class="task"><div class="t"><b>RPE ${TYPES[s.type].n}${s.label ? " · " + esc(s.label) : ""}</b><span>${s.start}–${s.end}${r ? ` · RPE ${r.rpe} × ${r.minutes} min = <b>${r.load}</b> UA` : ended ? " · Pendiente" : " · Disponible al acabar"}</span></div>${r ? `<button class="sec" data-r="${s.type}" data-s="${s.id}">Editar</button>` : `<button data-r="${s.type}" data-s="${s.id}" ${ended ? "" : 'class="sec"'}>Registrar</button>`}</div>`; }).join("")}
       ${sess.length ? "" : '<div class="task"><div class="t"><span>Hoy no hay sesiones en el horario.</span></div></div>'}
       <p style="margin:12px 0 0"><button class="sec full" data-r="">+ Registrar otra sesión</button></p></div>`;
     const last = [...dateRange(U.addDays(d, -6), d)].reverse();
@@ -149,7 +150,7 @@
       ${last.map(x => { const ww = W.find(y => y.date === x), rr = R.filter(y => y.date === x); return `<tr><td class="name">${fmtDate(x)}</td><td>${ww ? idxPill(index(ww)) : '<span class="muted">—</span>'}</td><td>${rr.map(y => `${TYPES[y.type].n} ${y.rpe}×${y.minutes}`).join(" · ") || '<span class="muted">—</span>'}</td><td><b>${rr.reduce((s, y) => s + y.load, 0) || ""}</b></td></tr>`; }).join("")}</table></div></div>`;
     view.innerHTML = html;
     view.querySelectorAll("[data-w]").forEach(b => b.onclick = () => showWellness(d, w));
-    view.querySelectorAll("[data-r]").forEach(b => b.onclick = () => showRpe(b.dataset.r || null, d));
+    view.querySelectorAll("[data-r]").forEach(b => b.onclick = () => showRpe(b.dataset.r || null, d, b.dataset.s || null));
     if ($("#bPush")) $("#bPush").onclick = async () => { try { const r = await Store.enablePush(); toast(r === "ok" ? "¡Notificaciones activadas!" : r); if (r === "ok") renderToday(); } catch (e) { toast("Error: " + e.message); } };
     if ($("#bInstall")) $("#bInstall").onclick = () => installEvt.prompt();
   }
@@ -177,17 +178,21 @@
   }
 
   /* ---------- JUGADORA: formulario RPE ---------- */
-  async function showRpe(type, date) {
+  async function showRpe(type, date, sid) {
     date = date || U.today();
-    const sess = U.sessionsOn(schedule, date);
-    if (!type) { const R = await Store.myRpe(); const p = sess.find(s => !R.some(r => r.date === date && r.type === s.type)); type = p ? p.type : (sess[0]?.type || "entreno"); }
-    const existing = (await Store.myRpe()).find(r => r.date === date && r.type === type);
+    const sess = U.sessionsOn(schedule, date), R = (await Store.myRpe()).filter(r => r.date === date);
+    let ses = sid ? sess.find(s => s.id === sid) : null;
+    if (!ses) { const cand = sess.filter(s => !type || s.type === type); ses = cand.find(s => !R.some(r => slotMatch(r, s))) || cand[0] || null; }
+    if (!type) type = ses ? ses.type : "entreno";
+    if (ses && ses.type !== type) ses = null;
+    const slot = ses ? ses.id : type;
+    const existing = R.find(r => ses ? slotMatch(r, ses) : (r.slot || r.type) === slot);
     let st = { type, rpe: existing?.rpe || null, minutes: existing?.minutes || null };
-    const defMin = t => { const s = sess.find(x => x.type === t); return s ? U.minutesBetween(s.start, s.end) : (t === "partido" ? 60 : t === "gym" ? 60 : 90); };
+    const defMin = t => { const s = ses || sess.find(x => x.type === t); return s ? U.minutesBetween(s.start, s.end) : (t === "partido" ? 60 : t === "gym" ? 60 : 90); };
     if (!st.minutes) st.minutes = defMin(type);
     $("#tabs").classList.add("hidden");
     const draw = () => {
-      view.innerHTML = `<div class="card"><h2>RPE</h2>
+      view.innerHTML = `<div class="card"><h2>RPE${ses ? ` <span class="muted" style="font-size:14px;font-weight:500">· sesión ${ses.start}–${ses.end}</span>` : ""}</h2>
         <label class="f">Tipo de sesión</label><div class="types">${Object.entries(TYPES).map(([k, t]) => `<button data-t="${k}" class="${st.type === k ? "on" : ""}">${t.n}</button>`).join("")}</div>
         <label class="f">Fecha</label><input type="date" id="rDate" value="${date}" max="${U.today()}">
         <label class="f">¿Qué esfuerzo te ha supuesto la sesión? (1–10)</label>
@@ -207,7 +212,7 @@
         const min = +$("#rMin").value;
         if (!st.rpe) return toast("Elige el RPE (1–10)"); if (!(min > 0)) return toast("Indica los minutos");
         $("#rSave").disabled = true;
-        try { await Store.saveRpe({ date: $("#rDate").value, type: st.type, rpe: st.rpe, minutes: min, load: st.rpe * min, comments: $("#rCom").value.trim() }); toast("RPE guardado ✓"); go("hoy"); }
+        try { await Store.saveRpe({ date: $("#rDate").value, type: st.type, slot, rpe: st.rpe, minutes: min, load: st.rpe * min, comments: $("#rCom").value.trim() }); toast("RPE guardado ✓"); go("hoy"); }
         catch (err) { toast("Error: " + err.message); $("#rSave").disabled = false; }
       };
     };

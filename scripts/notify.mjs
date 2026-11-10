@@ -55,8 +55,8 @@ const sessions = [
 for (const s of sessions) {
   const key = `${s.id || s.type}_${s.start}`, at = t2m(s.end) + (+sch.rpeDelay || 0);
   if (state.sent.includes(key) || nowMin < at || nowMin > at + 180) continue;
-  const done = new Set((await db.collection("rpe").where("date", "==", today).get()).docs.map(d => d.data()).filter(r => r.type === s.type).map(r => r.uid));
-  await send(users.filter(u => !done.has(u.uid)), `RPE ${TYPES[s.type] || s.type}`, "¿Qué esfuerzo te ha supuesto la sesión? Regístralo ahora", `${SITE_URL}?f=rpe&type=${s.type}&date=${today}`, "rpe-" + s.type);
+  const done = new Set((await db.collection("rpe").where("date", "==", today).get()).docs.map(d => d.data()).filter(r => r.slot ? r.slot === s.id : r.type === s.type).map(r => r.uid));
+  await send(users.filter(u => !done.has(u.uid)), `RPE ${TYPES[s.type] || s.type}`, "¿Qué esfuerzo te ha supuesto la sesión? Regístralo ahora", `${SITE_URL}?f=rpe&type=${s.type}&date=${today}&s=${encodeURIComponent(s.id || "")}`, "rpe-" + s.type);
   state.sent.push(key);
 }
 
