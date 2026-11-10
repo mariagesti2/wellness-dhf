@@ -39,6 +39,13 @@ async function send(targets, title, body, url, tag) {
   console.log(`  "${title}" → ${targets.length} jugadoras, ${res.successCount} ok, ${res.failureCount} fallos (${bad.length} tokens eliminados)`);
 }
 
+// 0) Mensaje de prueba lanzado a mano: a todas las personas con avisos activados
+if (process.env.TEST_MSG) {
+  const all = (await db.collection("users").get()).docs.map(d => ({ uid: d.id, ...d.data() })).filter(u => (u.tokens || []).length);
+  await send(all, "Wellness DHF", process.env.TEST_MSG, SITE_URL, "prueba");
+  process.exit(0);
+}
+
 // 1) Wellness a la hora indicada (con margen de 4 h por si GitHub se retrasa)
 const wT = t2m(sch.wellnessTime);
 if (!state.wellness && nowMin >= wT && nowMin < wT + 240) {

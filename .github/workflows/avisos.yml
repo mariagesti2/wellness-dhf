@@ -2,7 +2,12 @@ name: Avisos wellness y RPE
 on:
   schedule:
     - cron: "*/10 * * * *"   # cada 10 minutos (GitHub puede retrasarlo unos minutos)
-  workflow_dispatch: {}       # botón para lanzarlo a mano y probar
+  workflow_dispatch:          # botón para lanzarlo a mano y probar
+    inputs:
+      mensaje:
+        description: "Mensaje de prueba para todas (vacío = funcionamiento normal)"
+        required: false
+        default: ""
 permissions:
   contents: write
 jobs:
@@ -22,6 +27,7 @@ jobs:
         working-directory: scripts
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          TEST_MSG: ${{ github.event.inputs.mensaje }}
       # GitHub pausa las tareas programadas tras 60 días sin cambios en el repositorio:
       # cada ~45 días se hace un pequeño commit automático para mantenerlo activo.
       - name: Mantener el repositorio activo
