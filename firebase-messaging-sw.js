@@ -28,4 +28,9 @@ self.addEventListener("notificationclick", e => {
 
 self.addEventListener("install", () => self.skipWaiting());
 self.addEventListener("activate", e => e.waitUntil(self.clients.claim()));
-self.addEventListener("fetch", () => { /* red directa: siempre datos al día */ });
+// Siempre la última versión de la app: se pide a la red (revalidando caché) y, sin conexión, lo guardado
+self.addEventListener("fetch", e => {
+  const u = new URL(e.request.url);
+  if (e.request.method !== "GET" || u.origin !== self.location.origin) return;
+  e.respondWith(fetch(e.request, { cache: "no-cache" }).then(r => { const c = r.clone(); caches.open("dhf-v1").then(k => k.put(e.request, c)); return r; }).catch(() => caches.match(e.request)));
+});
