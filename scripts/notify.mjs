@@ -30,7 +30,8 @@ const stateRef = db.doc("system/notify");
 let state = (await stateRef.get()).data() || {};
 if (state.date !== today) state = { date: today, wellness: false, sent: [] };
 
-const users = (await db.collection("users").get()).docs.map(d => ({ uid: d.id, ...d.data() })).filter(u => !u.staff && (u.tokens || []).length);
+const allUsers = (await db.collection("users").get()).docs.map(d => ({ uid: d.id, ...d.data() }));
+const users = allUsers.filter(u => !u.staff && (u.tokens || []).length);
 console.log(`Madrid ${today} ${parts.hour}:${parts.minute} · ${users.length} jugadoras con avisos activados`);
 
 async function send(targets, title, body, url, tag) {
@@ -82,6 +83,19 @@ for (const s of sessions) {
   const done = new Set((await db.collection("rpe").where("date", "==", today).get()).docs.map(d => d.data()).filter(r => r.slot ? r.slot === s.id : r.type === s.type).map(r => r.uid));
   await send(users.filter(u => !done.has(u.uid)), `RPE ${TYPES[s.type] || s.type}`, "¿Qué esfuerzo te ha supuesto la sesión? Regístralo ahora", `${SITE_URL}?f=rpe&type=${s.type}&date=${today}&s=${encodeURIComponent(s.id || "")}`, "rpe-" + s.type);
   state.sent.push(key);
+}
+
+// 3) Aviso solo a la psicóloga (config/admins.psych) cuando el bienestar psicológico es 3 o menos
+const psychEmails = (((await db.doc("config/admins").get()).data() || {}).psych || []).map(e => String(e).toLowerCase());
+const psy = allUsers.filter(u => psychEmails.includes(String(u.email || "").toLowerCase()) && (u.tokens || []).length);
+if (psy.length) {
+  const yd = new Date(Date.now() - 864e5).toLocaleDateString("en-CA", { timeZone: "Europe/Madrid" });
+  const low = (await db.collection("rpe").where("date", "in", [today, yd]).get()).docs.filter(d => { const r = d.data(); return r.psych != null && r.psych <= 3 && !r.psychAlerted; });
+  for (const d of low) {
+    const r = d.data();
+    await send(psy, "🧠 Bienestar psicológico bajo", `${r.name}: ${r.psych}/5 en ${TYPES[r.type] || r.type}` + (r.reflection ? ` · “${String(r.reflection).slice(0, 90)}”` : ""), `${SITE_URL}?f=reflex`, "psy-" + d.id);
+    await d.ref.update({ psychAlerted: true });
+  }
 }
 
 await stateRef.set(state);

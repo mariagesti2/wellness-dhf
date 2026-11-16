@@ -102,8 +102,9 @@
     async function profile(u) {
       const snap = await F.getDoc(F.doc(fs, "users", u.uid));
       let isCoach = false;
-      try { const a = await F.getDoc(F.doc(fs, "config", "admins")); isCoach = (a.data()?.emails || []).map(e => e.toLowerCase()).includes((u.email || "").toLowerCase()); } catch (e) { }
-      return { uid: u.uid, email: u.email, name: snap.data()?.name || u.email, isCoach };
+      let isPsych = false;
+      try { const a = await F.getDoc(F.doc(fs, "config", "admins")); const em = (u.email || "").toLowerCase(); isCoach = (a.data()?.emails || []).map(e => e.toLowerCase()).includes(em); isPsych = (a.data()?.psych || []).map(e => e.toLowerCase()).includes(em); } catch (e) { }
+      return { uid: u.uid, email: u.email, name: snap.data()?.name || u.email, isCoach, isPsych };
     }
     const list = async (q) => (await F.getDocs(q)).docs.map(d => ({ id: d.id, ...d.data() }));
     return {

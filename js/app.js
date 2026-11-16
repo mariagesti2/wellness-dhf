@@ -82,7 +82,8 @@
       const q = new URLSearchParams(location.search);
       if (!u.isCoach && q.get("f") === "wellness") { history.replaceState(null, "", location.pathname); return showWellness(); }
       if (!u.isCoach && q.get("f") === "rpe") { history.replaceState(null, "", location.pathname); return showRpe(q.get("type"), q.get("date"), q.get("s")); }
-      go(u.isCoach ? "equipo" : "hoy");
+      if (u.isCoach && q.get("f") === "reflex") { history.replaceState(null, "", location.pathname); return go("reflex"); }
+      go(u.isCoach ? (u.isPsych ? "reflex" : "equipo") : "hoy");
     });
   }
 
@@ -94,7 +95,7 @@
   function go(t) {
     tab = t; window.scrollTo(0, 0);
     view.classList.toggle("wide", !!me.isCoach);
-    if (me.isCoach) { setTabs([["equipo", "👥", "Equipo"], ["jugadora", "📈", "Jugadora"], ["avisos", "📣", "Avisos"], ["horario", "🗓️", "Horario"]]); ({ equipo: renderTeam, jugadora: renderPlayerCoach, avisos: renderMessages, horario: renderSchedule })[t](); }
+    if (me.isCoach) { setTabs([["equipo", "👥", "Equipo"], ["jugadora", "📈", "Jugadora"], ["reflex", "🧠", "Reflexiones"], ["avisos", "📣", "Avisos"], ["horario", "🗓️", "Horario"]]); ({ equipo: renderTeam, jugadora: renderPlayerCoach, reflex: renderReflections, avisos: renderMessages, horario: renderSchedule })[t](); }
     else { setTabs([["hoy", "🏑", "Hoy"], ["evolucion", "📈", "Mi evolución"]]); ({ hoy: renderToday, evolucion: renderMine })[t](); }
   }
 
@@ -416,6 +417,7 @@
       <div class="row" style="margin-bottom:12px"><h2 class="grow" style="margin:0">Equipo · ${fmtDate(d)}</h2>
         <button class="sec" id="dPrev">‹</button><input type="date" id="tDate" value="${d}" style="width:auto"><button class="sec" id="dNext">›</button>
         <button class="sec" id="bRef">↻</button><button id="bTeamXls">⬇ Excel equipo</button></div>
+      ${staffPushBanner()}
       ${d === U.today() && players.length - wToday.length > 0 ? `<div class="alert">📣 <div><b>${players.length - wToday.length} jugadoras</b> no han hecho el wellness de hoy. <button id="bRemind" style="margin-left:6px;padding:6px 12px">Mandarles un aviso</button></div></div>` : ""}
       <div class="stats">
         <div class="stat"><span>Wellness respondidos</span><b>${wToday.length}/${players.length}</b><small>${players.length - wToday.length} pendientes</small></div>
@@ -441,6 +443,7 @@
     const L = loadsByDay(R, days), np = Math.max(1, players.length);
     Charts.bars($("#chTeamLoad"), { labels: days, height: 180, series: Object.entries(TYPES).map(([k, t]) => ({ name: t.n + " (media/jugadora)", color: t.c, values: L[k].map(v => Math.round(v / np)) })) });
     view.querySelectorAll("[data-p]").forEach(b => b.onclick = () => { selPlayer = b.dataset.p; go("jugadora"); });
+    bindStaffPush();
     $("#tDate").onchange = e => { teamDate = e.target.value; renderTeam(); };
     $("#dPrev").onclick = () => { teamDate = U.addDays(teamDate, -1); renderTeam(); };
     $("#dNext").onclick = () => { teamDate = U.addDays(teamDate, 1); renderTeam(); };
@@ -459,6 +462,47 @@
     $("#selP").onchange = e => { selPlayer = e.target.value; renderPlayerCoach(); };
     const w = W.filter(x => x.uid === p.uid), r = R.filter(x => x.uid === p.uid);
     evolution($("#evo"), p.name, w, r, () => XLSX.download(fileName(p.name), XLSX.build(playerBook(p.name, w, r))));
+  }
+
+  /* ---------- CUERPO TÉCNICO: notificaciones propias ---------- */
+  function staffPushBanner() {
+    if (Store.mode !== "firebase" || !("Notification" in window) || Notification.permission === "granted") return "";
+    return `<div class="alert">🔔 <div><b>Activa las notificaciones en este dispositivo</b>${me.isPsych ? " para recibir un aviso cuando una jugadora puntúe su bienestar psicológico con 3 o menos" : ""}. <button id="bStaffPush" style="margin-left:6px;padding:6px 12px">Activar</button></div></div>`;
+  }
+  function bindStaffPush() {
+    const b = $("#bStaffPush"); if (!b) return;
+    b.onclick = async () => { try { const r = await Store.enablePush(); toast(r === "ok" ? "¡Notificaciones activadas!" : r); if (r === "ok") go(tab); } catch (e) { toast("Error: " + e.message); } };
+  }
+
+  /* ---------- CUERPO TÉCNICO: reflexiones y comentarios ---------- */
+  let rxOnlyLow = false, rxPlayer = "", rxWeeks = 4;
+  async function renderReflections() {
+    view.innerHTML = '<p class="muted center pad">Cargando…</p>';
+    const { W, R, players } = await teamData();
+    const from = U.addDays(U.today(), -rxWeeks * 7 + 1);
+    let items = [
+      ...R.filter(r => r.date >= from && (r.psych || r.reflection || r.comments)).map(r => ({ ...r, kind: "rpe" })),
+      ...W.filter(w => w.date >= from && w.comments).map(w => ({ ...w, kind: "wellness" }))
+    ];
+    if (rxPlayer) items = items.filter(x => x.uid === rxPlayer);
+    if (rxOnlyLow) items = items.filter(x => x.kind === "rpe" && x.psych && x.psych <= 3);
+    items.sort((a, b) => b.date.localeCompare(a.date) || (b.ts || 0) - (a.ts || 0));
+    const low = R.filter(r => r.date >= from && r.psych && r.psych <= 3).length;
+    const pill = v => `<span class="pill ${v <= 2 ? "bad" : v === 3 ? "warn" : "ok"}">🧠 ${v}/5</span>`;
+    view.innerHTML = `<div class="row" style="margin-bottom:12px"><h2 class="grow" style="margin:0">Reflexiones y comentarios</h2>
+        <div class="seg" id="rxW">${[1, 2, 4, 8].map(n => `<button data-n="${n}" class="${n === rxWeeks ? "on" : ""}">${n} sem</button>`).join("")}</div></div>
+      ${staffPushBanner()}
+      <div class="card row" style="gap:12px">
+        <select id="rxP" style="max-width:260px"><option value="">Todas las jugadoras</option>${players.map(p => `<option value="${p.uid}" ${p.uid === rxPlayer ? "selected" : ""}>${esc(p.name)}</option>`).join("")}</select>
+        <label style="display:flex;gap:6px;align-items:center;font-size:14px"><input type="checkbox" id="rxLow" style="width:auto" ${rxOnlyLow ? "checked" : ""}> Solo bienestar psicológico ≤ 3 <span class="pill ${low ? "warn" : ""}">${low}</span></label>
+      </div>
+      <div class="card">${items.map(x => `<div class="task"><div class="t"><b>${esc(x.name)} · ${fmtDate(x.date)} · ${x.kind === "rpe" ? "RPE " + (TYPES[x.type]?.n || x.type) : "Wellness"}</b>
+          ${x.reflection ? `<span>💭 ${esc(x.reflection)}</span>` : ""}${x.comments ? `<span>${esc(x.comments)}</span>` : ""}${x.kind === "rpe" && !x.reflection && !x.comments ? '<span class="muted">Sin reflexión</span>' : ""}</div>
+          ${x.kind === "rpe" && x.psych ? pill(x.psych) : ""}</div>`).join("") || '<p class="muted">No hay nada en este periodo.</p>'}</div>`;
+    bindStaffPush();
+    view.querySelectorAll("#rxW button").forEach(b => b.onclick = () => { rxWeeks = +b.dataset.n; renderReflections(); });
+    $("#rxP").onchange = e => { rxPlayer = e.target.value; renderReflections(); };
+    $("#rxLow").onchange = e => { rxOnlyLow = e.target.checked; renderReflections(); };
   }
 
   /* ---------- PREPARADOR: avisos manuales ---------- */

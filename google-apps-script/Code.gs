@@ -110,7 +110,8 @@ function avisar() {
   let state = getDoc_("system/notify") || {};
   if (state.date !== today) state = { date: today, wellness: false, sent: [] };
   state.sent = state.sent || [];
-  const users = listUsers_().filter(u => !u.staff && (u.tokens || []).length);
+  const allUsers = listUsers_();
+  const users = allUsers.filter(u => !u.staff && (u.tokens || []).length);
 
   // 0) Avisos del cuerpo técnico
   query_("messages", "status", "pending").forEach(m => {
@@ -145,6 +146,20 @@ function avisar() {
       `${SITE_URL}?f=rpe&type=${s.type}&date=${today}&s=${encodeURIComponent(s.id || "")}`, "rpe-" + s.type);
     state.sent.push(key);
   });
+
+  // 3) Aviso solo a la psicóloga cuando una jugadora puntúa su bienestar psicológico con 3 o menos
+  const adm = getDoc_("config/admins") || {};
+  const psychEmails = (adm.psych || []).map(e => String(e).toLowerCase());
+  const psy = allUsers.filter(u => psychEmails.indexOf(String(u.email || "").toLowerCase()) >= 0 && (u.tokens || []).length);
+  if (psy.length) {
+    const yday = Utilities.formatDate(new Date(now.getTime() - 864e5), TZ, "yyyy-MM-dd");
+    query_("rpe", "date", today).concat(query_("rpe", "date", yday))
+      .filter(r => r.psych != null && Number(r.psych) <= 3 && !r.psychAlerted)
+      .forEach(r => {
+        send_(psy, "🧠 Bienestar psicológico bajo", `${r.name}: ${r.psych}/5 en ${TYPES[r.type] || r.type}` + (r.reflection ? ` · “${String(r.reflection).slice(0, 90)}”` : ""), SITE_URL + "?f=reflex", "psy-" + r.id);
+        setDoc_("rpe/" + r.id, { psychAlerted: true }, ["psychAlerted"]);
+      });
+  }
 
   setDoc_("system/notify", state, ["date", "wellness", "sent"]);
 }
