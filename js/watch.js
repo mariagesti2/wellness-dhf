@@ -12,7 +12,8 @@
     { k: "hrv", n: "VFC (HRV)", u: "ms" },
     { k: "tempDev", n: "Temperatura (desv.)", u: "°C" },
     { k: "resp", n: "Frec. respiratoria", u: "rpm" },
-    { k: "bodyBattery", n: "Body Battery (cambio)", u: "" }
+    { k: "bodyBattery", n: "Body Battery (cambio)", u: "" },
+    { k: "recovery", n: "Recuperación", u: "%" }
   ];
   const DUR = /(\d{1,2})\s*h(?:oras?|rs?)?\s*(?:(\d{1,2})\s*m(?:in)?)?(?![a-z])|(\d{1,3})\s*m(?:in)?(?![a-zá])/i;
   const toMin = m => m ? (m[1] != null ? +m[1] * 60 + (+m[2] || 0) : +m[3]) : null;
@@ -72,7 +73,7 @@
     o.hrRest = hr ? +hr[1] : (t.match(/(\d{2,3})\s*(lpm|bpm)/i) || [])[1] * 1 || null;
     const hrv = after(t, "(VFC|HRV|variabilidad)", /(\d{2,3})\s*ms/i, 80);
     o.hrv = hrv ? +hrv[1] : null;
-    const rr = after(t, "(frec\\.?\\s*resp|respiraci[oó]n|respiratory|resp\\. rate)", /(\d{1,2}[,.]\d)/, 60);
+    const rr = after(t, "(frecuencia respiratoria|frec\\.?\\s*resp|respiraci[oó]n|respiratory|resp\\. rate)", /(\d{1,2}[,.]\d)/, 60);
     o.resp = rr ? num(rr[1]) : null;
     const tp = after(t, "(temperatura|temperature|temp\\.)", /([-−+]?\s?\d{1,2}[,.]\d)/, 40);
     o.tempDev = tp ? num(tp[1].replace(/\s/g, "")) : null;
@@ -97,6 +98,18 @@
         else { const m = lines[pj].match(valRe); if (m) o[k] = num(m[1].replace(/\s/g, "")); }
       }
     });
+    // Whoop (pantalla de recuperación): etiquetas en mayúsculas con el número al lado y debajo la media de 30 días
+    if (o.hrv == null) { const m = after(t, "variabilidad de la", /(?<![\d,.])(\d{2,3})(?![\d,.%])/, 60); if (m) o.hrv = +m[1]; }
+    if (o.hrRest == null) {
+      const re = /frecuencia card[ií]aca/gi; let m;
+      while ((m = re.exec(t))) {
+        if (/variabilidad/i.test(t.slice(Math.max(0, m.index - 45), m.index))) continue;
+        const v = t.slice(m.index + m[0].length, m.index + m[0].length + 25).match(/(?<![\d,.])(\d{2,3})(?![\d,.%])/);
+        if (v) { o.hrRest = +v[1]; break; }
+      }
+    }
+    if (o.sleepScore == null) { const m = t.match(/calificaci[oó]n del sue[ñn]o\s+(\d{2,3})\s*%/i); if (m) o.sleepScore = +m[1]; }
+    lines.forEach((ln, i) => { if (!/^\s*RECUPERACI[OÓ]N\s*$/.test(ln)) return; const pj = prevIdx(i); const m = pj >= 0 && lines[pj].match(/^\s*(\d{1,3})\s*%\s*$/); if (m && +m[1] <= 100) o.recovery = +m[1]; });
     // coherencia
     ["deepMin", "remMin", "lightMin", "awakeMin"].forEach(k => { if (o[k] != null && o.sleepMin != null && o[k] > o.sleepMin + 60) o[k] = null; });
     if (o.hrRest != null && (o.hrRest < 30 || o.hrRest > 120)) o.hrRest = null;
@@ -160,9 +173,9 @@
     });
   }
   // Mejora la imagen: escala ×2, escala de grises, invierte si es modo oscuro y binariza (el gris claro pasa a negro)
-  async function preprocess(file) {
+  async function preprocess(file, scale = 2) {
     const bmp = await createImageBitmap(file);
-    const c = document.createElement("canvas"); c.width = bmp.width * 2; c.height = bmp.height * 2;
+    const c = document.createElement("canvas"); c.width = Math.round(bmp.width * scale); c.height = Math.round(bmp.height * scale);
     const g = c.getContext("2d"); g.imageSmoothingQuality = "high"; g.drawImage(bmp, 0, 0, c.width, c.height);
     const d = g.getImageData(0, 0, c.width, c.height), px = d.data; let sum = 0;
     for (let i = 0; i < px.length; i += 4) { const y = 0.299 * px[i] + 0.587 * px[i + 1] + 0.114 * px[i + 2]; px[i] = y; sum += y; }
@@ -183,7 +196,7 @@
   }
   async function readImages(files, onProgress, parser = parse) {
     const T = await loadTesseract();
-    let step = 0; const total = files.length * 3;
+    let step = 0; const total = files.length * 4;
     const worker = await T.createWorker("spa+eng", 1, { logger: m => m.status === "recognizing text" && onProgress && onProgress((step + m.progress) / total) });
     const out = {};
     try {
@@ -192,9 +205,10 @@
         const a = (await worker.recognize(await preprocess(f))).data.text; step++;
         await worker.setParameters({ tessedit_pageseg_mode: "3" });          // lectura normal
         const b = (await worker.recognize(f)).data.text; step++;
-        await worker.setParameters({ tessedit_pageseg_mode: "11" });         // texto disperso (números grandes, anillos)
-        const c = (await worker.recognize(f)).data.text; step++;
-        merge(out, [parser(a), parser(b), parser(c)]);
+        await worker.setParameters({ tessedit_pageseg_mode: "11" });         // texto disperso (números grandes, anillos), imagen reducida
+        const c = (await worker.recognize(await preprocess(f, 0.5))).data.text; step++;
+        const d = (await worker.recognize(f)).data.text; step++;            // texto disperso sobre la imagen original
+        merge(out, [parser(a), parser(c), parser(d), parser(b)]);
       }
     } finally { await worker.terminate(); }
     delete out._w;
